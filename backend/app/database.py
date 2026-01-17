@@ -68,18 +68,55 @@ def create_tables():
 
 
 def run_migrations():
-    """Run manual migrations for SQLite (adding new columns).
+    """Run manual migrations for database schema updates.
 
     Only runs on existing databases - skips if users table doesn't exist yet.
+    Handles both SQLite and PostgreSQL.
     """
     from sqlalchemy import text, inspect
+    from app.config import get_settings
 
     engine = get_engine()
+    settings = get_settings()
+    is_postgres = not settings.database_url.startswith("sqlite")
 
     # Check if users table exists first
     inspector = inspect(engine)
     if "users" not in inspector.get_table_names():
+        # For PostgreSQL, ensure itemstatus enum has 'deleted' value before tables are created
+        if is_postgres:
+            with engine.connect() as conn:
+                # Check if itemstatus type exists
+                result = conn.execute(text(
+                    "SELECT 1 FROM pg_type WHERE typname = 'itemstatus'"
+                ))
+                if result.fetchone():
+                    # Check if 'deleted' value exists in the enum
+                    result = conn.execute(text(
+                        "SELECT 1 FROM pg_enum WHERE enumlabel = 'deleted' "
+                        "AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'itemstatus')"
+                    ))
+                    if not result.fetchone():
+                        # Add 'deleted' to itemstatus enum
+                        conn.execute(text("ALTER TYPE itemstatus ADD VALUE IF NOT EXISTS 'deleted'"))
+                        conn.commit()
         return  # Fresh database, tables will be created by create_tables()
+
+    # For PostgreSQL, update itemstatus enum if needed
+    if is_postgres:
+        with engine.connect() as conn:
+            # Check if itemstatus type exists and add 'deleted' if missing
+            result = conn.execute(text(
+                "SELECT 1 FROM pg_type WHERE typname = 'itemstatus'"
+            ))
+            if result.fetchone():
+                result = conn.execute(text(
+                    "SELECT 1 FROM pg_enum WHERE enumlabel = 'deleted' "
+                    "AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'itemstatus')"
+                ))
+                if not result.fetchone():
+                    conn.execute(text("ALTER TYPE itemstatus ADD VALUE IF NOT EXISTS 'deleted'"))
+                    conn.commit()
 
     with engine.connect() as conn:
         # Check and add last_active column to users
