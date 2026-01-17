@@ -234,15 +234,24 @@ interface DoorProps {
   canMove: boolean;
   isDragging: boolean;
   onDragStart?: (e: React.MouseEvent) => void;
+  shape?: RoomShape;
+  cutoutWidth?: number | null;
+  cutoutHeight?: number | null;
+  cutoutCorner?: CutoutCorner | null;
 }
 
-function Door({ wall, position, doorWidth, roomWidth, roomHeight, scale, canMove, isDragging, onDragStart }: DoorProps) {
+function Door({ wall, position, doorWidth, roomWidth, roomHeight, scale, canMove, isDragging, onDragStart, shape, cutoutWidth, cutoutHeight, cutoutCorner }: DoorProps) {
   const [isHovered, setIsHovered] = useState(false);
 
   const dw = doorWidth * scale;
   const rw = roomWidth * scale;
   const rh = roomHeight * scale;
   const wallThickness = 4;
+
+  // Calculate cutout dimensions in scaled units
+  const cw = (cutoutWidth || 0) * scale;
+  const ch = (cutoutHeight || 0) * scale;
+  const isLShape = shape === 'l_shape' && cutoutWidth && cutoutHeight && cutoutCorner;
 
   // Colors - highlight on hover/drag
   const strokeColor = (isHovered || isDragging) ? '#3b82f6' : '#374151';
@@ -257,37 +266,68 @@ function Door({ wall, position, doorWidth, roomWidth, roomHeight, scale, canMove
   let arcPath = '';
   let openingX = 0, openingY = 0, openingW = 0, openingH = 0;
 
+  // Calculate effective wall length and offset for L-shaped rooms
+  // The door position (0-1) is relative to the actual wall segment, not the full room dimension
+  let wallLength = 0;
+  let wallOffset = 0;
+
   switch (wall) {
-    case 'north':
-      // Door on top wall, hinge on right side, swings inward (down-left)
-      hingeX = position * rw + dw / 2;
+    case 'north': {
+      // North wall: check if cutout affects it (top_left or top_right)
+      if (isLShape && (cutoutCorner === 'top_left' || cutoutCorner === 'top_right')) {
+        wallLength = rw - cw;
+        wallOffset = cutoutCorner === 'top_left' ? cw : 0;
+      } else {
+        wallLength = rw;
+        wallOffset = 0;
+      }
+      // Door on top wall, hinge on left side of opening, swings inward (down-right)
+      hingeX = wallOffset + position * wallLength - dw / 2;
       hingeY = 0;
       leafEndX = hingeX;
       leafEndY = dw;
-      // Arc from leaf end to wall (counter-clockwise, showing swing to left)
-      arcPath = `M ${leafEndX} ${leafEndY} A ${dw} ${dw} 0 0 0 ${hingeX - dw} 0`;
-      openingX = hingeX - dw;
+      // Arc from wall (right side of opening) to leaf end (clockwise, showing swing to right)
+      arcPath = `M ${hingeX + dw} 0 A ${dw} ${dw} 0 0 1 ${hingeX} ${dw}`;
+      openingX = hingeX;
       openingY = -wallThickness;
       openingW = dw;
       openingH = wallThickness * 2;
       break;
-    case 'south':
-      // Door on bottom wall, hinge on right side, swings inward (up-left)
-      hingeX = position * rw + dw / 2;
+    }
+    case 'south': {
+      // South wall: check if cutout affects it (bottom_left or bottom_right)
+      if (isLShape && (cutoutCorner === 'bottom_left' || cutoutCorner === 'bottom_right')) {
+        wallLength = rw - cw;
+        wallOffset = cutoutCorner === 'bottom_left' ? cw : 0;
+      } else {
+        wallLength = rw;
+        wallOffset = 0;
+      }
+      // Door on bottom wall, hinge on left side of opening, swings inward (up-right)
+      hingeX = wallOffset + position * wallLength - dw / 2;
       hingeY = rh;
       leafEndX = hingeX;
       leafEndY = rh - dw;
-      // Arc from leaf end to wall (clockwise, showing swing to left)
-      arcPath = `M ${leafEndX} ${leafEndY} A ${dw} ${dw} 0 0 1 ${hingeX - dw} ${rh}`;
-      openingX = hingeX - dw;
+      // Arc from wall (right side of opening) to leaf end (counter-clockwise, showing swing to right)
+      arcPath = `M ${hingeX + dw} ${rh} A ${dw} ${dw} 0 0 0 ${hingeX} ${rh - dw}`;
+      openingX = hingeX;
       openingY = rh - wallThickness;
       openingW = dw;
       openingH = wallThickness * 2;
       break;
-    case 'east':
+    }
+    case 'east': {
+      // East wall: check if cutout affects it (top_right or bottom_right)
+      if (isLShape && (cutoutCorner === 'top_right' || cutoutCorner === 'bottom_right')) {
+        wallLength = rh - ch;
+        wallOffset = cutoutCorner === 'top_right' ? ch : 0;
+      } else {
+        wallLength = rh;
+        wallOffset = 0;
+      }
       // Door on right wall, swings inward (left)
       hingeX = rw;
-      hingeY = position * rh - dw / 2;
+      hingeY = wallOffset + position * wallLength - dw / 2;
       leafEndX = rw - dw;
       leafEndY = hingeY;
       // Arc from leaf end to wall (counter-clockwise)
@@ -297,10 +337,19 @@ function Door({ wall, position, doorWidth, roomWidth, roomHeight, scale, canMove
       openingW = wallThickness * 2;
       openingH = dw;
       break;
-    case 'west':
+    }
+    case 'west': {
+      // West wall: check if cutout affects it (top_left or bottom_left)
+      if (isLShape && (cutoutCorner === 'top_left' || cutoutCorner === 'bottom_left')) {
+        wallLength = rh - ch;
+        wallOffset = cutoutCorner === 'top_left' ? ch : 0;
+      } else {
+        wallLength = rh;
+        wallOffset = 0;
+      }
       // Door on left wall, swings inward (right)
       hingeX = 0;
-      hingeY = position * rh - dw / 2;
+      hingeY = wallOffset + position * wallLength - dw / 2;
       leafEndX = dw;
       leafEndY = hingeY;
       // Arc from leaf end to wall (clockwise)
@@ -310,6 +359,51 @@ function Door({ wall, position, doorWidth, roomWidth, roomHeight, scale, canMove
       openingW = wallThickness * 2;
       openingH = dw;
       break;
+    }
+    case 'cutout_horizontal': {
+      // Horizontal internal wall of L-shape (runs along X axis)
+      if (!isLShape) break;
+      wallLength = cw;
+      // Position of internal horizontal wall depends on cutout corner
+      const wallY = (cutoutCorner === 'top_left' || cutoutCorner === 'top_right') ? ch : rh - ch;
+      const wallStartX = (cutoutCorner === 'top_left' || cutoutCorner === 'bottom_left') ? 0 : rw - cw;
+      // Door swings into the room (away from cutout)
+      const swingDown = (cutoutCorner === 'top_left' || cutoutCorner === 'top_right');
+      hingeX = wallStartX + position * wallLength - dw / 2;
+      hingeY = wallY;
+      leafEndX = hingeX;
+      leafEndY = swingDown ? wallY + dw : wallY - dw;
+      arcPath = swingDown
+        ? `M ${hingeX + dw} ${wallY} A ${dw} ${dw} 0 0 1 ${hingeX} ${wallY + dw}`
+        : `M ${hingeX + dw} ${wallY} A ${dw} ${dw} 0 0 0 ${hingeX} ${wallY - dw}`;
+      openingX = hingeX;
+      openingY = wallY - wallThickness;
+      openingW = dw;
+      openingH = wallThickness * 2;
+      break;
+    }
+    case 'cutout_vertical': {
+      // Vertical internal wall of L-shape (runs along Y axis)
+      if (!isLShape) break;
+      wallLength = ch;
+      // Position of internal vertical wall depends on cutout corner
+      const wallX = (cutoutCorner === 'top_left' || cutoutCorner === 'bottom_left') ? cw : rw - cw;
+      const wallStartY = (cutoutCorner === 'top_left' || cutoutCorner === 'top_right') ? 0 : rh - ch;
+      // Door swings into the room (away from cutout)
+      const swingRight = (cutoutCorner === 'top_left' || cutoutCorner === 'bottom_left');
+      hingeX = wallX;
+      hingeY = wallStartY + position * wallLength - dw / 2;
+      leafEndX = swingRight ? wallX + dw : wallX - dw;
+      leafEndY = hingeY;
+      arcPath = swingRight
+        ? `M ${wallX} ${hingeY + dw} A ${dw} ${dw} 0 0 0 ${wallX + dw} ${hingeY}`
+        : `M ${wallX} ${hingeY + dw} A ${dw} ${dw} 0 0 1 ${wallX - dw} ${hingeY}`;
+      openingX = wallX - wallThickness;
+      openingY = hingeY;
+      openingW = wallThickness * 2;
+      openingH = dw;
+      break;
+    }
   }
 
   return (
@@ -584,34 +678,110 @@ function RoomCanvas({
       const localY = svgP.y - offsetY;
       const rw = roomWidth * scale;
       const rh = roomHeight * scale;
+      const cw = (shapeCutoutWidth || 0) * scale;
+      const ch = (shapeCutoutHeight || 0) * scale;
+      const isLShape = shape === 'l_shape' && shapeCutoutWidth && shapeCutoutHeight && shapeCutoutCorner;
 
-      // Determine which wall based on cursor position (closest edge)
+      // Calculate distances to all walls (including internal L-shape walls)
       const distToNorth = localY;
       const distToSouth = rh - localY;
       const distToWest = localX;
       const distToEast = rw - localX;
 
-      const minDist = Math.min(distToNorth, distToSouth, distToWest, distToEast);
-      let newWall: DoorWall;
-      let newPos = 0;
+      // For L-shaped rooms, also calculate distance to internal walls
+      let distToCutoutH = Infinity; // horizontal internal wall
+      let distToCutoutV = Infinity; // vertical internal wall
 
-      if (minDist === distToNorth) {
-        newWall = 'north';
-        newPos = localX / rw;
-      } else if (minDist === distToSouth) {
-        newWall = 'south';
-        newPos = localX / rw;
-      } else if (minDist === distToWest) {
-        newWall = 'west';
-        newPos = localY / rh;
-      } else {
-        newWall = 'east';
-        newPos = localY / rh;
+      if (isLShape) {
+        // Internal horizontal wall (runs along X)
+        const cutoutHY = (shapeCutoutCorner === 'top_left' || shapeCutoutCorner === 'top_right') ? ch : rh - ch;
+        const cutoutHStartX = (shapeCutoutCorner === 'top_left' || shapeCutoutCorner === 'bottom_left') ? 0 : rw - cw;
+        const cutoutHEndX = cutoutHStartX + cw;
+        if (localX >= cutoutHStartX && localX <= cutoutHEndX) {
+          distToCutoutH = Math.abs(localY - cutoutHY);
+        }
+
+        // Internal vertical wall (runs along Y)
+        const cutoutVX = (shapeCutoutCorner === 'top_left' || shapeCutoutCorner === 'bottom_left') ? cw : rw - cw;
+        const cutoutVStartY = (shapeCutoutCorner === 'top_left' || shapeCutoutCorner === 'top_right') ? 0 : rh - ch;
+        const cutoutVEndY = cutoutVStartY + ch;
+        if (localY >= cutoutVStartY && localY <= cutoutVEndY) {
+          distToCutoutV = Math.abs(localX - cutoutVX);
+        }
+      }
+
+      // Find the closest wall
+      const allDistances = [
+        { wall: 'north' as DoorWall, dist: distToNorth },
+        { wall: 'south' as DoorWall, dist: distToSouth },
+        { wall: 'west' as DoorWall, dist: distToWest },
+        { wall: 'east' as DoorWall, dist: distToEast },
+        { wall: 'cutout_horizontal' as DoorWall, dist: distToCutoutH },
+        { wall: 'cutout_vertical' as DoorWall, dist: distToCutoutV },
+      ];
+
+      const closest = allDistances.reduce((min, curr) => curr.dist < min.dist ? curr : min);
+      let newWall: DoorWall = closest.wall;
+      let newPos = 0;
+      let wallLengthScaled = 0;
+      let wallOffsetScaled = 0;
+
+      switch (newWall) {
+        case 'north':
+          if (isLShape && (shapeCutoutCorner === 'top_left' || shapeCutoutCorner === 'top_right')) {
+            wallLengthScaled = rw - cw;
+            wallOffsetScaled = shapeCutoutCorner === 'top_left' ? cw : 0;
+          } else {
+            wallLengthScaled = rw;
+            wallOffsetScaled = 0;
+          }
+          newPos = (localX - wallOffsetScaled) / wallLengthScaled;
+          break;
+        case 'south':
+          if (isLShape && (shapeCutoutCorner === 'bottom_left' || shapeCutoutCorner === 'bottom_right')) {
+            wallLengthScaled = rw - cw;
+            wallOffsetScaled = shapeCutoutCorner === 'bottom_left' ? cw : 0;
+          } else {
+            wallLengthScaled = rw;
+            wallOffsetScaled = 0;
+          }
+          newPos = (localX - wallOffsetScaled) / wallLengthScaled;
+          break;
+        case 'west':
+          if (isLShape && (shapeCutoutCorner === 'top_left' || shapeCutoutCorner === 'bottom_left')) {
+            wallLengthScaled = rh - ch;
+            wallOffsetScaled = shapeCutoutCorner === 'top_left' ? ch : 0;
+          } else {
+            wallLengthScaled = rh;
+            wallOffsetScaled = 0;
+          }
+          newPos = (localY - wallOffsetScaled) / wallLengthScaled;
+          break;
+        case 'east':
+          if (isLShape && (shapeCutoutCorner === 'top_right' || shapeCutoutCorner === 'bottom_right')) {
+            wallLengthScaled = rh - ch;
+            wallOffsetScaled = shapeCutoutCorner === 'top_right' ? ch : 0;
+          } else {
+            wallLengthScaled = rh;
+            wallOffsetScaled = 0;
+          }
+          newPos = (localY - wallOffsetScaled) / wallLengthScaled;
+          break;
+        case 'cutout_horizontal':
+          wallLengthScaled = cw;
+          wallOffsetScaled = (shapeCutoutCorner === 'top_left' || shapeCutoutCorner === 'bottom_left') ? 0 : rw - cw;
+          newPos = (localX - wallOffsetScaled) / wallLengthScaled;
+          break;
+        case 'cutout_vertical':
+          wallLengthScaled = ch;
+          wallOffsetScaled = (shapeCutoutCorner === 'top_left' || shapeCutoutCorner === 'top_right') ? 0 : rh - ch;
+          newPos = (localY - wallOffsetScaled) / wallLengthScaled;
+          break;
       }
 
       // Clamp to valid range (keep door fully within wall)
-      const wallLength = (newWall === 'north' || newWall === 'south') ? roomWidth : roomHeight;
-      const doorW = (doorWidth || 1) / wallLength;
+      const effectiveWallLength = wallLengthScaled / scale;
+      const doorW = (doorWidth || 1) / effectiveWallLength;
       newPos = Math.max(doorW / 2 + 0.02, Math.min(1 - doorW / 2 - 0.02, newPos));
 
       // Update local state for smooth preview
@@ -915,6 +1085,10 @@ function RoomCanvas({
             canMove={canEdit() && !!(onDoorMove || onDoorMoveEnd)}
             isDragging={dragging?.type === 'door'}
             onDragStart={handleDoorMouseDown}
+            shape={shape}
+            cutoutWidth={shapeCutoutWidth}
+            cutoutHeight={shapeCutoutHeight}
+            cutoutCorner={shapeCutoutCorner}
           />
         )}
 

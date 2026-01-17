@@ -50,8 +50,10 @@ export interface AuthToken {
 /** Supported room shapes */
 export type RoomShape = 'rectangle' | 'l_shape';
 
-/** Wall positions for door placement */
-export type DoorWall = 'north' | 'south' | 'east' | 'west';
+/** Wall positions for door placement
+ * For L-shaped rooms, 'cutout_horizontal' and 'cutout_vertical' refer to the internal walls
+ */
+export type DoorWall = 'north' | 'south' | 'east' | 'west' | 'cutout_horizontal' | 'cutout_vertical';
 
 /** Corner positions for L-shape cutout */
 export type CutoutCorner = 'top_left' | 'top_right' | 'bottom_left' | 'bottom_right';
