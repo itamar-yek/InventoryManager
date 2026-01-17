@@ -59,8 +59,9 @@ class Item(BaseModel):
 
     __table_args__ = (
         # Active items must have a location (either storage_unit or compartment)
+        # Use deleted_at IS NOT NULL instead of status enum check to avoid PostgreSQL enum issues
         CheckConstraint(
-            "(status = 'deleted') OR (storage_unit_id IS NOT NULL OR compartment_id IS NOT NULL)",
+            "(deleted_at IS NOT NULL) OR (storage_unit_id IS NOT NULL OR compartment_id IS NOT NULL)",
             name="check_item_has_location"
         ),
         # Cannot have both storage_unit_id and compartment_id
