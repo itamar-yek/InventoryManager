@@ -38,7 +38,7 @@ function AdminDashboard() {
     const fetchData = async () => {
       try {
         const [usersData, statsData] = await Promise.all([
-          authApi.listUsers() as Promise<UserWithStats[]>,
+          authApi.listUsers() as unknown as Promise<UserWithStats[]>,
           authApi.getStats(),
         ]);
         setUsers(usersData);

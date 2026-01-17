@@ -9,7 +9,7 @@ import { useInventoryStore } from '../stores/inventoryStore';
 import { useAuthStore } from '../stores/authStore';
 import RoomCanvas from '../components/RoomCanvas';
 import LoginPrompt from '../components/LoginPrompt';
-import type { StorageUnitCreate, StorageUnitType, StorageUnitUpdate, BlockCreate, BlockUpdate, ItemCreate, Item, DoorWall } from '../types';
+import type { StorageUnitCreate, StorageUnitType, StorageUnitUpdate, BlockCreate, ItemCreate, Item, DoorWall } from '../types';
 
 /**
  * Room detail with canvas and unit management

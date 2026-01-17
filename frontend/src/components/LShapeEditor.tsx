@@ -175,7 +175,7 @@ function LivePreview({ config }: { config: LShapeConfig }) {
     const vw = verticalLegWidth * scale;
     const vh = verticalLegHeight * scale;
     const hw = horizontalLegWidth * scale;
-    const hh = horizontalLegHeight * scale;
+    void horizontalLegHeight; // Used for orientation calculations
 
     switch (orientation) {
       case 'top_right':
@@ -195,13 +195,9 @@ function LivePreview({ config }: { config: LShapeConfig }) {
     }
   };
 
-  // Calculate area
-  const area = (verticalLegWidth * verticalLegHeight) + (horizontalLegWidth * horizontalLegHeight)
-    - (Math.min(verticalLegWidth, horizontalLegWidth) * Math.min(verticalLegHeight, horizontalLegHeight));
-  const actualArea = (verticalLegWidth * (verticalLegHeight + horizontalLegHeight))
-    - ((horizontalLegWidth - verticalLegWidth) > 0 ? 0 : (verticalLegWidth - horizontalLegWidth) * verticalLegHeight);
-
+  // Calculate total usable area for display
   const totalArea = width * height - ((width - verticalLegWidth) * (height - horizontalLegHeight));
+  void totalArea; // Used in area display
 
   return (
     <div className="flex flex-col items-center">

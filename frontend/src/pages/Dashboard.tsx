@@ -17,7 +17,7 @@ function Dashboard() {
   const { user, canEdit, isAuthenticated } = useAuthStore();
   const [showLoginPrompt, setShowLoginPrompt] = useState(false);
   const navigate = useNavigate();
-  const location = useLocation();
+  void useLocation(); // Available for future navigation state
   const isViewer = user && !canEdit();
 
   /**
