@@ -1,0 +1,63 @@
+# =============================================================================
+# Docker Ignore - Inventory Manager
+# =============================================================================
+# Files to exclude from Docker build context.
+
+# Git
+.git
+.gitignore
+
+# Documentation
+*.md
+docs/
+
+# Environment files
+.env
+.env.*
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache
+.coverage
+htmlcov
+.mypy_cache
+venv
+.venv
+env
+
+# Node
+node_modules
+npm-debug.log*
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+dist
+build
+
+# Docker
+Dockerfile*
+docker-compose*
+.docker
+
+# Tests
+tests
+*_test.py
+test_*
+
+# Local files
+*.local
+*.log
+uploads
+backups

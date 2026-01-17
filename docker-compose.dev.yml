@@ -1,0 +1,54 @@
+# =============================================================================
+# Docker Compose - Development Override
+# =============================================================================
+# Use this for local development with hot reloading.
+#
+# Usage:
+#   docker-compose -f docker-compose.yml -f docker-compose.dev.yml up
+
+version: '3.8'
+
+services:
+  # ---------------------------------------------------------------------------
+  # Database - expose port for direct access
+  # ---------------------------------------------------------------------------
+  db:
+    ports:
+      - "5432:5432"
+
+  # ---------------------------------------------------------------------------
+  # Backend - development mode with hot reload
+  # ---------------------------------------------------------------------------
+  backend:
+    build:
+      context: ./backend
+      dockerfile: ../docker/Dockerfile.backend
+    volumes:
+      - ./backend:/app:cached
+      - uploads_data:/app/uploads
+    environment:
+      DEBUG: "true"
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    ports:
+      - "8000:8000"
+
+  # ---------------------------------------------------------------------------
+  # Frontend - development mode with Vite
+  # ---------------------------------------------------------------------------
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.frontend
+      target: builder  # Use builder stage for dev
+    volumes:
+      - ./frontend:/app:cached
+      - /app/node_modules  # Preserve node_modules
+    environment:
+      - NODE_ENV=development
+      - VITE_API_URL=http://backend:8000
+    command: npm run dev -- --host 0.0.0.0
+    ports:
+      - "3000:3000"
+
+volumes:
+  uploads_data:

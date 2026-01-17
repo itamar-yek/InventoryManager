@@ -1,0 +1,76 @@
+/**
+ * Global Styles for Inventory Manager
+ *
+ * Uses Tailwind CSS with custom utilities.
+ * No external fonts or resources - fully offline compatible.
+ */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom base styles */
+@layer base {
+  body {
+    @apply bg-gray-50 text-gray-900 antialiased;
+  }
+
+  /* Ensure consistent focus styles */
+  :focus-visible {
+    @apply outline-none ring-2 ring-primary-500 ring-offset-2;
+  }
+}
+
+/* Custom component classes */
+@layer components {
+  /* Button variants */
+  .btn {
+    @apply inline-flex items-center justify-center px-4 py-2 rounded-md font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-primary {
+    @apply btn bg-primary-600 text-white hover:bg-primary-700 focus:ring-primary-500;
+  }
+
+  .btn-secondary {
+    @apply btn bg-gray-200 text-gray-900 hover:bg-gray-300 focus:ring-gray-500;
+  }
+
+  .btn-danger {
+    @apply btn bg-red-600 text-white hover:bg-red-700 focus:ring-red-500;
+  }
+
+  /* Form inputs */
+  .input {
+    @apply block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-primary-500 focus:border-primary-500;
+  }
+
+  .label {
+    @apply block text-sm font-medium text-gray-700 mb-1;
+  }
+
+  /* Card component */
+  .card {
+    @apply bg-white rounded-lg shadow-sm border border-gray-200 p-4;
+  }
+}
+
+/* Custom utilities */
+@layer utilities {
+  /* For SVG room layout */
+  .room-canvas {
+    @apply bg-white border-2 border-gray-300 rounded-lg;
+  }
+
+  .storage-unit {
+    @apply cursor-pointer transition-all duration-200;
+  }
+
+  .storage-unit:hover {
+    @apply opacity-80;
+  }
+
+  .storage-unit.selected {
+    @apply ring-2 ring-primary-500;
+  }
+}

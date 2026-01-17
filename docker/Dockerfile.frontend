@@ -1,0 +1,48 @@
+# =============================================================================
+# Frontend Dockerfile for Inventory Manager
+# =============================================================================
+# Multi-stage build: Node for building, Nginx for serving.
+# All assets are bundled locally - no external CDN dependencies.
+#
+# Build context should be the project root (not frontend directory)
+# so that nginx.conf can be copied from the docker directory.
+
+# -----------------------------------------------------------------------------
+# Stage 1: Build stage - compile TypeScript and bundle assets
+# -----------------------------------------------------------------------------
+FROM node:20-alpine as builder
+
+WORKDIR /app
+
+# Copy package files from frontend directory
+COPY frontend/package*.json ./
+
+# Install dependencies (including devDependencies for build)
+RUN npm ci
+
+# Copy source code from frontend directory
+COPY frontend/ .
+
+# Build the application
+RUN npm run build
+
+# -----------------------------------------------------------------------------
+# Stage 2: Production stage - serve with Nginx
+# -----------------------------------------------------------------------------
+FROM nginx:alpine
+
+# Copy built files from builder stage
+COPY --from=builder /app/dist /usr/share/nginx/html
+
+# Copy nginx config from docker directory
+COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
+
+# Expose port
+EXPOSE 80
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD wget --no-verbose --tries=1 --spider http://localhost/ || exit 1
+
+# Start nginx
+CMD ["nginx", "-g", "daemon off;"]
