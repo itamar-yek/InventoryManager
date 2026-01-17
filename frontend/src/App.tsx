@@ -23,14 +23,26 @@ import AdminDashboard from './pages/AdminDashboard';
  * Main App with routing configuration
  */
 function App() {
-  const { fetchUser, token } = useAuthStore();
+  const { fetchUser, token, user, isLoading } = useAuthStore();
 
-  // Fetch user on mount if token exists
+  // Fetch user on mount if token exists but user is not loaded
   useEffect(() => {
-    if (token) {
+    if (token && !user) {
       fetchUser();
     }
-  }, []);
+  }, [token, user, fetchUser]);
+
+  // Show loading while fetching user on initial load
+  if (token && !user && isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <BrowserRouter>

@@ -115,7 +115,7 @@ export const useAuthStore = create<AuthState>()(
       fetchUser: async () => {
         const token = localStorage.getItem('access_token');
         if (!token) {
-          set({ user: null, token: null });
+          set({ user: null, token: null, isLoading: false });
           return;
         }
 
@@ -149,7 +149,15 @@ export const useAuthStore = create<AuthState>()(
     }),
     {
       name: 'auth-storage',
-      partialize: (state) => ({ token: state.token }),
+      // Persist both token and user to avoid race conditions on reload
+      partialize: (state) => ({ token: state.token, user: state.user }),
+      onRehydrateStorage: () => (state) => {
+        // After hydration, if we have a token but no user, we need to fetch user
+        // Set isLoading to true so ProtectedRoute waits
+        if (state?.token && !state?.user) {
+          useAuthStore.setState({ isLoading: true });
+        }
+      },
     }
   )
 );

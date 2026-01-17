@@ -15,7 +15,7 @@ function Login() {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
-  const { login, register, isLoading, error, clearError } = useAuthStore();
+  const { login, register, isLoading, error, clearError, user, token } = useAuthStore();
 
   // Check if we should start in register mode (from ?register=true query param)
   const shouldStartInRegister = searchParams.get('register') === 'true';
@@ -28,6 +28,13 @@ function Login() {
 
   // Get redirect path from location state
   const from = (location.state as { from?: { pathname: string } })?.from?.pathname || '/';
+
+  // Redirect if already authenticated
+  useEffect(() => {
+    if (user && token) {
+      navigate(from, { replace: true });
+    }
+  }, [user, token, navigate, from]);
 
   /**
    * Handle form submission

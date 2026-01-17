@@ -61,20 +61,14 @@ api.interceptors.request.use((config) => {
 
 /**
  * Response interceptor - handles auth errors
+ * Note: We don't auto-redirect on 401 to avoid race conditions.
+ * The ProtectedRoute component handles redirects for unauthenticated users.
  */
 api.interceptors.response.use(
   (response) => response,
   (error: AxiosError<ApiError>) => {
-    if (error.response?.status === 401) {
-      // Only redirect to login if not already on login page
-      // and if this is not the initial token validation
-      const isLoginPage = window.location.pathname === '/login';
-      const isAuthEndpoint = error.config?.url?.includes('/auth/');
-      if (!isLoginPage && !isAuthEndpoint) {
-        localStorage.removeItem('access_token');
-        window.location.href = '/login';
-      }
-    }
+    // Just reject the error, let the calling code handle it
+    // The ProtectedRoute and auth store will handle redirects appropriately
     return Promise.reject(error);
   }
 );
@@ -352,7 +346,7 @@ export const itemsApi = {
     limit?: number;
     offset?: number;
   }): Promise<SearchResults> {
-    const response = await api.get<SearchResults>('/items/search/', { params });
+    const response = await api.get<SearchResults>('/items/search', { params });
     return response.data;
   },
 
