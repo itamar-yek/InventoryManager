@@ -74,6 +74,7 @@ async def search_items(
     for item in items:
         result = {
             **item.to_dict(),
+            "room_id": None,
             "room_name": None,
             "storage_unit_label": None,
             "compartment_name": None
@@ -82,12 +83,14 @@ async def search_items(
         if item.storage_unit:
             result["storage_unit_label"] = item.storage_unit.label
             if item.storage_unit.room:
+                result["room_id"] = str(item.storage_unit.room.id)
                 result["room_name"] = item.storage_unit.room.name
         elif item.compartment:
             result["compartment_name"] = item.compartment.name
             if item.compartment.storage_unit:
                 result["storage_unit_label"] = item.compartment.storage_unit.label
                 if item.compartment.storage_unit.room:
+                    result["room_id"] = str(item.compartment.storage_unit.room.id)
                     result["room_name"] = item.compartment.storage_unit.room.name
 
         results.append(result)

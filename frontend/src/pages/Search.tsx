@@ -145,17 +145,24 @@ function Search() {
                         {item.catalog_number || '-'}
                       </td>
                       <td className="py-3">
-                        <div className="text-sm">
-                          {item.room_name && (
-                            <p className="text-primary-600">{item.room_name}</p>
-                          )}
-                          {item.storage_unit_label && (
-                            <p className="text-gray-600">{item.storage_unit_label}</p>
-                          )}
-                          {item.compartment_name && (
-                            <p className="text-gray-500">{item.compartment_name}</p>
-                          )}
-                        </div>
+                        {item.room_id ? (
+                          <Link
+                            to={`/rooms/${item.room_id}?highlight=${item.storage_unit_id || ''}`}
+                            className="block text-sm hover:bg-primary-50 rounded p-1 -m-1 transition-colors"
+                          >
+                            {item.room_name && (
+                              <p className="text-primary-600 hover:text-primary-700 font-medium">{item.room_name}</p>
+                            )}
+                            {item.storage_unit_label && (
+                              <p className="text-gray-600">{item.storage_unit_label}</p>
+                            )}
+                            {item.compartment_name && (
+                              <p className="text-gray-500">{item.compartment_name}</p>
+                            )}
+                          </Link>
+                        ) : (
+                          <div className="text-sm text-gray-400">No location</div>
+                        )}
                       </td>
                       <td className="py-3">
                         {item.quantity}

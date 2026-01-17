@@ -71,6 +71,7 @@ class ItemSearch(BaseModel):
 
 class ItemSearchResult(ItemResponse):
     """Schema for item search result with location info."""
+    room_id: Optional[UUID] = None
     room_name: Optional[str] = None
     storage_unit_label: Optional[str] = None
     compartment_name: Optional[str] = None

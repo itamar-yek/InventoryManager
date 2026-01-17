@@ -274,6 +274,7 @@ export interface Item {
 
 /** Item with location info (from search) */
 export interface ItemSearchResult extends Item {
+  room_id: string | null;
   room_name: string | null;
   storage_unit_label: string | null;
   compartment_name: string | null;

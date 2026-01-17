@@ -4,7 +4,7 @@
  * Shows room layout with storage units and allows editing.
  */
 import { useEffect, useState, useCallback } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useSearchParams } from 'react-router-dom';
 import { useInventoryStore } from '../stores/inventoryStore';
 import { useAuthStore } from '../stores/authStore';
 import RoomCanvas from '../components/RoomCanvas';
@@ -16,6 +16,7 @@ import type { StorageUnitCreate, StorageUnitType, StorageUnitUpdate, BlockCreate
  */
 function RoomDetail() {
   const { id } = useParams<{ id: string }>();
+  const [searchParams, setSearchParams] = useSearchParams();
   const {
     currentRoom,
     fetchRoom,
@@ -110,6 +111,20 @@ function RoomDetail() {
       selectUnit(null);
     };
   }, [id]);
+
+  // Handle highlight parameter from search - auto-select storage unit
+  useEffect(() => {
+    const highlightUnitId = searchParams.get('highlight');
+    if (highlightUnitId && currentRoom) {
+      // Check if the unit exists in this room
+      const unitExists = currentRoom.storage_units.some(u => u.id === highlightUnitId);
+      if (unitExists) {
+        selectUnit(highlightUnitId);
+        // Clear the highlight param after selecting
+        setSearchParams({}, { replace: true });
+      }
+    }
+  }, [searchParams, currentRoom, selectUnit, setSearchParams]);
 
   // Fetch all rooms for move dialog
   useEffect(() => {
