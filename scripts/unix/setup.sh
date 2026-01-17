@@ -55,6 +55,9 @@ log_step "Created uploads, backups, and logs directories"
 # -----------------------------------------------------------------------------
 echo ""
 echo "Step 3: Building Docker images"
+# Disable BuildKit to avoid "unable to initialize frontend" errors on some networks
+export DOCKER_BUILDKIT=0
+export COMPOSE_DOCKER_CLI_BUILD=0
 docker-compose build
 log_step "Docker images built successfully"
 

@@ -101,6 +101,7 @@ docker-compose.override.yml
 *.sql
 *.sqlite
 *.sqlite3
+*.db
 
 # -----------------------------------------------------------------------------
 # Uploads and user data

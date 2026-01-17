@@ -79,7 +79,10 @@ if not exist .env (
 
 REM Build Docker images
 echo [5/7] Building Docker images (this may take several minutes)...
-docker-compose build
+REM Disable BuildKit to avoid "unable to initialize frontend" errors
+set DOCKER_BUILDKIT=0
+set COMPOSE_DOCKER_CLI_BUILD=0
+docker-compose build --no-cache
 if %ERRORLEVEL% NEQ 0 (
     echo.
     echo ERROR: Failed to build Docker images!
