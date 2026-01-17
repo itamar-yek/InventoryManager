@@ -46,13 +46,15 @@ function RoomDetail() {
   /**
    * Check if user can edit, show login prompt if not authenticated
    */
-  const requireEdit = (): boolean => {
+  const _requireEdit = (): boolean => {
     if (!isAuthenticated()) {
       setShowLoginPrompt(true);
       return false;
     }
     return canEdit();
   };
+  // Suppress unused variable warning - kept for potential future use
+  void _requireEdit;
 
   // Check if user has permission to view room details (requires editor role)
   useEffect(() => {

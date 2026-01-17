@@ -4,12 +4,12 @@
  * Lists all rooms with ability to create new ones.
  */
 import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useInventoryStore } from '../stores/inventoryStore';
 import { useAuthStore } from '../stores/authStore';
 import LoginPrompt from '../components/LoginPrompt';
 import LShapeEditor from '../components/LShapeEditor';
-import type { RoomCreate, RoomShape, DoorWall, CutoutCorner } from '../types';
+import type { RoomCreate, DoorWall } from '../types';
 
 /**
  * Rooms list and creation

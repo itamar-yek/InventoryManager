@@ -16,14 +16,13 @@ import type {
   Block,
   BlockCreate,
   BlockUpdate,
-  Compartment,
   Item,
   ItemCreate,
   ItemUpdate,
   ItemMove,
   ItemSearchResult,
 } from '../types';
-import { roomsApi, storageUnitsApi, blocksApi, compartmentsApi, itemsApi } from '../services/api';
+import { roomsApi, storageUnitsApi, blocksApi, itemsApi } from '../services/api';
 
 /**
  * Extract error message from various error types
