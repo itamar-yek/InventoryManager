@@ -1,0 +1,102 @@
+# =============================================================================
+# Docker Compose - Inventory Manager (Offline Deployment)
+# =============================================================================
+# Use this configuration for offline deployments where the frontend has been
+# pre-built and Docker images have been pre-loaded.
+#
+# Prerequisites:
+#   1. Frontend built via scripts/windows/build-frontend.bat
+#   2. Docker images imported via scripts/windows/import-images.bat
+#
+# Usage:
+#   docker-compose -f docker-compose.offline.yml up -d
+
+version: '3.8'
+
+services:
+  # ---------------------------------------------------------------------------
+  # PostgreSQL Database
+  # ---------------------------------------------------------------------------
+  db:
+    image: postgres:15-alpine
+    container_name: inventory-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-inventory}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - inventory-network
+
+  # ---------------------------------------------------------------------------
+  # Backend API (FastAPI) - Uses pre-loaded image
+  # ---------------------------------------------------------------------------
+  backend:
+    image: inventorymanager-main-backend
+    container_name: inventory-backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-inventory}
+      SECRET_KEY: ${SECRET_KEY:-change-this-in-production}
+      DEBUG: ${DEBUG:-false}
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-*}
+    volumes:
+      - uploads_data:/app/uploads
+      - logs_data:/app/logs
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - inventory-network
+
+  # ---------------------------------------------------------------------------
+  # Frontend (Nginx with pre-built static files) - Uses pre-loaded image
+  # ---------------------------------------------------------------------------
+  frontend:
+    image: inventorymanager-main-frontend
+    container_name: inventory-frontend
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-80}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - inventory-network
+
+# =============================================================================
+# Volumes - Persistent data storage
+# =============================================================================
+volumes:
+  postgres_data:
+    name: inventory-postgres-data
+  uploads_data:
+    name: inventory-uploads
+  logs_data:
+    name: inventory-logs
+
+# =============================================================================
+# Networks
+# =============================================================================
+networks:
+  inventory-network:
+    name: inventory-network
+    driver: bridge
