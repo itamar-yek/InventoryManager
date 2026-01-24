@@ -64,7 +64,7 @@ function Search() {
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Search Items</h1>
         <p className="text-gray-600">
-          Find items by name, catalog number, or description
+          Find items by name, catalog number, description, owner, project, or storage unit
         </p>
       </div>
 
@@ -75,7 +75,7 @@ function Search() {
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Enter item name or catalog number..."
+            placeholder="Search by name, catalog #, owner, project, unit..."
             className="input flex-1"
             autoFocus
           />
@@ -121,10 +121,9 @@ function Search() {
                 <thead>
                   <tr className="border-b text-left">
                     <th className="pb-2 font-semibold">Name</th>
-                    <th className="pb-2 font-semibold">Unit Cat #</th>
-                    <th className="pb-2 font-semibold">Cat #</th>
+                    <th className="pb-2 font-semibold">Details</th>
                     <th className="pb-2 font-semibold">Location</th>
-                    <th className="pb-2 font-semibold">Qty</th>
+                    <th className="pb-2 font-semibold text-center">Qty</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -138,11 +137,35 @@ function Search() {
                           </p>
                         )}
                       </td>
-                      <td className="py-3">
-                        {item.unit_catalog_number || '-'}
-                      </td>
-                      <td className="py-3">
-                        {item.catalog_number || '-'}
+                      <td className="py-3 text-sm">
+                        {item.unit_catalog_number && (
+                          <p className="text-gray-600">
+                            <span className="text-gray-400">Unit#:</span> {item.unit_catalog_number}
+                          </p>
+                        )}
+                        {item.catalog_number && (
+                          <p className="text-gray-600">
+                            <span className="text-gray-400">Cat#:</span> {item.catalog_number}
+                          </p>
+                        )}
+                        {item.serial_number && (
+                          <p className="text-gray-600">
+                            <span className="text-gray-400">S/N:</span> {item.serial_number}
+                          </p>
+                        )}
+                        {item.owned_by && (
+                          <p className="text-gray-600">
+                            <span className="text-gray-400">Owner:</span> {item.owned_by}
+                          </p>
+                        )}
+                        {item.projects && item.projects.length > 0 && (
+                          <p className="text-gray-600">
+                            <span className="text-gray-400">Projects:</span> {item.projects.join(', ')}
+                          </p>
+                        )}
+                        {!item.unit_catalog_number && !item.catalog_number && !item.serial_number && !item.owned_by && (!item.projects || item.projects.length === 0) && (
+                          <span className="text-gray-400">-</span>
+                        )}
                       </td>
                       <td className="py-3">
                         {item.room_id ? (
@@ -150,21 +173,32 @@ function Search() {
                             to={`/rooms/${item.room_id}?highlight=${item.storage_unit_id || ''}`}
                             className="block text-sm hover:bg-primary-50 rounded p-1 -m-1 transition-colors"
                           >
-                            {item.room_name && (
-                              <p className="text-primary-600 hover:text-primary-700 font-medium">{item.room_name}</p>
+                            {item.location_path ? (
+                              <p className="text-primary-600 hover:text-primary-700 font-medium">
+                                {item.location_path}
+                              </p>
+                            ) : (
+                              <>
+                                {item.room_name && (
+                                  <p className="text-primary-600 hover:text-primary-700 font-medium">{item.room_name}</p>
+                                )}
+                                {item.storage_unit_label && (
+                                  <p className="text-gray-600">{item.storage_unit_label}</p>
+                                )}
+                                {item.compartment_name && (
+                                  <p className="text-gray-500">{item.compartment_name}</p>
+                                )}
+                              </>
                             )}
-                            {item.storage_unit_label && (
-                              <p className="text-gray-600">{item.storage_unit_label}</p>
-                            )}
-                            {item.compartment_name && (
-                              <p className="text-gray-500">{item.compartment_name}</p>
+                            {item.storage_unit_type && (
+                              <p className="text-xs text-gray-400 capitalize">{item.storage_unit_type}</p>
                             )}
                           </Link>
                         ) : (
                           <div className="text-sm text-gray-400">No location</div>
                         )}
                       </td>
-                      <td className="py-3">
+                      <td className="py-3 text-center">
                         {item.quantity}
                       </td>
                     </tr>
@@ -189,8 +223,13 @@ function Search() {
           <ul className="text-sm text-gray-600 space-y-1">
             <li>• Search by item name (e.g., "screwdriver")</li>
             <li>• Search by catalog number (e.g., "ABC-123")</li>
+            <li>• Search by owner name</li>
+            <li>• Search by project name</li>
+            <li>• Search by storage unit label</li>
+            <li>• Search by description</li>
             <li>• Partial matches are supported</li>
             <li>• Search is case-insensitive</li>
+            <li>• Hebrew and other languages are supported</li>
           </ul>
         </div>
       )}

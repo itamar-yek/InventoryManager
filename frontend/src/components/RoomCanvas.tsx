@@ -697,17 +697,23 @@ function RoomCanvas({
         const cutoutHY = (shapeCutoutCorner === 'top_left' || shapeCutoutCorner === 'top_right') ? ch : rh - ch;
         const cutoutHStartX = (shapeCutoutCorner === 'top_left' || shapeCutoutCorner === 'bottom_left') ? 0 : rw - cw;
         const cutoutHEndX = cutoutHStartX + cw;
-        if (localX >= cutoutHStartX && localX <= cutoutHEndX) {
-          distToCutoutH = Math.abs(localY - cutoutHY);
-        }
+
+        // Calculate distance to the wall segment (perpendicular + distance to segment bounds)
+        const clampedHX = Math.max(cutoutHStartX, Math.min(cutoutHEndX, localX));
+        const dxH = localX - clampedHX;
+        const dyH = localY - cutoutHY;
+        distToCutoutH = Math.sqrt(dxH * dxH + dyH * dyH);
 
         // Internal vertical wall (runs along Y)
         const cutoutVX = (shapeCutoutCorner === 'top_left' || shapeCutoutCorner === 'bottom_left') ? cw : rw - cw;
         const cutoutVStartY = (shapeCutoutCorner === 'top_left' || shapeCutoutCorner === 'top_right') ? 0 : rh - ch;
         const cutoutVEndY = cutoutVStartY + ch;
-        if (localY >= cutoutVStartY && localY <= cutoutVEndY) {
-          distToCutoutV = Math.abs(localX - cutoutVX);
-        }
+
+        // Calculate distance to the wall segment (perpendicular + distance to segment bounds)
+        const clampedVY = Math.max(cutoutVStartY, Math.min(cutoutVEndY, localY));
+        const dxV = localX - cutoutVX;
+        const dyV = localY - clampedVY;
+        distToCutoutV = Math.sqrt(dxV * dxV + dyV * dyV);
       }
 
       // Find the closest wall

@@ -27,8 +27,8 @@ class Room(BaseModel):
     shape_cutout_corner = Column(String(20), nullable=True)
 
     # Door configuration
-    # Stored as string: "north", "south", "east", "west"
-    door_wall = Column(String(10), nullable=True)
+    # Stored as string: "north", "south", "east", "west", "cutout_horizontal", "cutout_vertical"
+    door_wall = Column(String(20), nullable=True)
     door_position = Column(Float, nullable=True)  # Position along wall (0.0 to 1.0)
     door_width = Column(Float, default=1.0, nullable=True)  # Door width in meters
 

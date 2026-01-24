@@ -101,20 +101,25 @@ function OrientationPreview({
   const innerSize = size - padding * 2;
 
   // Generate path based on orientation
+  // The cutout corner indicates WHERE THE NOTCH IS (the missing piece)
   const getPath = () => {
     const w = innerSize;
     const h = innerSize;
-    const cutW = w * 0.45;
-    const cutH = h * 0.45;
+    const cutW = w * 0.55; // cutout width (the notch size)
+    const cutH = h * 0.55; // cutout height (the notch size)
 
     switch (orientation) {
       case 'top_right':
+        // Notch in top-right: L starts top-left, goes right, down at cutout, right to edge, down, left, up
         return `M 0 0 L ${w - cutW} 0 L ${w - cutW} ${cutH} L ${w} ${cutH} L ${w} ${h} L 0 ${h} Z`;
       case 'top_left':
+        // Notch in top-left: L starts at cutout, goes right to edge, down, left, up at cutout, up
         return `M ${cutW} 0 L ${w} 0 L ${w} ${h} L 0 ${h} L 0 ${cutH} L ${cutW} ${cutH} Z`;
       case 'bottom_right':
+        // Notch in bottom-right: L starts top-left, goes right, down, left at cutout, down, left, up
         return `M 0 0 L ${w} 0 L ${w} ${h - cutH} L ${w - cutW} ${h - cutH} L ${w - cutW} ${h} L 0 ${h} Z`;
       case 'bottom_left':
+        // Notch in bottom-left: starts top-left, right, down, left, down at cutout, left, up
         return `M 0 0 L ${w} 0 L ${w} ${h} L ${cutW} ${h} L ${cutW} ${h - cutH} L 0 ${h - cutH} Z`;
       default:
         return '';
@@ -169,27 +174,27 @@ function LivePreview({ config }: { config: LShapeConfig }) {
   const svgHeight = height * scale;
 
   // Generate path based on orientation and actual dimensions
+  // cutoutWidth/cutoutHeight represent the size of the notch (missing area)
   const getPath = () => {
     const w = svgWidth;
     const h = svgHeight;
-    const vw = verticalLegWidth * scale;
-    const vh = verticalLegHeight * scale;
-    const hw = horizontalLegWidth * scale;
-    void horizontalLegHeight; // Used for orientation calculations
+    // Calculate cutout dimensions from leg dimensions
+    const cutW = (horizontalLegWidth - verticalLegWidth) * scale; // Width of the notch
+    const cutH = verticalLegHeight * scale; // Height of the notch
 
     switch (orientation) {
       case 'top_right':
-        // Vertical leg on left, extends up. Horizontal leg on bottom right
-        return `M 0 0 L ${vw} 0 L ${vw} ${vh} L ${hw} ${vh} L ${hw} ${h} L 0 ${h} Z`;
+        // Notch in top-right corner
+        return `M 0 0 L ${w - cutW} 0 L ${w - cutW} ${cutH} L ${w} ${cutH} L ${w} ${h} L 0 ${h} Z`;
       case 'top_left':
-        // Vertical leg on right, extends up. Horizontal leg on bottom left
-        return `M ${w - vw} 0 L ${w} 0 L ${w} ${h} L 0 ${h} L 0 ${vh} L ${w - vw} ${vh} Z`;
+        // Notch in top-left corner
+        return `M ${cutW} 0 L ${w} 0 L ${w} ${h} L 0 ${h} L 0 ${cutH} L ${cutW} ${cutH} Z`;
       case 'bottom_right':
-        // Vertical leg on left bottom, horizontal leg on top right
-        return `M 0 0 L ${hw} 0 L ${hw} ${h - vh} L ${vw} ${h - vh} L ${vw} ${h} L 0 ${h} Z`;
+        // Notch in bottom-right corner
+        return `M 0 0 L ${w} 0 L ${w} ${h - cutH} L ${w - cutW} ${h - cutH} L ${w - cutW} ${h} L 0 ${h} Z`;
       case 'bottom_left':
-        // Vertical leg on right bottom, horizontal leg on top left
-        return `M 0 0 L ${w} 0 L ${w} ${h - vh} L ${w - vw} ${h - vh} L ${w - vw} ${h} L 0 ${h} Z`;
+        // Notch in bottom-left corner
+        return `M 0 0 L ${w} 0 L ${w} ${h} L ${cutW} ${h} L ${cutW} ${h - cutH} L 0 ${h - cutH} Z`;
       default:
         return `M 0 0 L ${w} 0 L ${w} ${h} L 0 ${h} Z`;
     }

@@ -9,7 +9,7 @@ from typing import List, Optional, Literal
 
 # Type definitions using Literal for validation
 RoomShapeType = Literal["rectangle", "l_shape"]
-DoorWallType = Literal["north", "south", "east", "west"]
+DoorWallType = Literal["north", "south", "east", "west", "cutout_horizontal", "cutout_vertical"]
 CutoutCornerType = Literal["top_left", "top_right", "bottom_left", "bottom_right"]
 
 

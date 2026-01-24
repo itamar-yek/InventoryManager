@@ -276,8 +276,12 @@ export interface Item {
 export interface ItemSearchResult extends Item {
   room_id: string | null;
   room_name: string | null;
+  room_building: string | null;
+  storage_unit_id: string | null;
   storage_unit_label: string | null;
+  storage_unit_type: string | null;
   compartment_name: string | null;
+  location_path: string | null;
 }
 
 /** Search results response */

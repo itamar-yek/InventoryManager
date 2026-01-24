@@ -7,9 +7,10 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import or_
+from sqlalchemy import or_, func, text, cast, String
 
 from app.database import get_db
+from app.config import get_settings
 from app.models.item import Item, ItemStatus
 from app.models.item_movement import ItemMovement
 from app.models.storage_unit import StorageUnit
@@ -34,23 +35,39 @@ async def search_items(
     offset: int = Query(default=0, ge=0)
 ):
     """
-    Search items by name, catalog numbers, with optional filters (requires editor role).
+    Search items by name, catalog numbers, description, projects, and storage unit label.
     Returns items with location information.
     """
     q = db.query(Item).filter(Item.status == status)
 
-    # Text search
+    # Track if we need to do Python-side project filtering
+    search_query_lower = query.lower() if query else None
+
+    # Text search - join with StorageUnit to search on unit label
     if query:
         search_term = f"%{query}%"
-        q = q.filter(
-            or_(
-                Item.name.ilike(search_term),
-                Item.unit_catalog_number.ilike(search_term),
-                Item.catalog_number.ilike(search_term),
-                Item.serial_number.ilike(search_term),
-                Item.description.ilike(search_term)
+        q = q.outerjoin(StorageUnit, Item.storage_unit_id == StorageUnit.id)
+
+        # Build filter conditions for standard text fields
+        filters = [
+            Item.name.ilike(search_term),
+            Item.unit_catalog_number.ilike(search_term),
+            Item.catalog_number.ilike(search_term),
+            Item.serial_number.ilike(search_term),
+            Item.description.ilike(search_term),
+            Item.owned_by.ilike(search_term),
+            StorageUnit.label.ilike(search_term)
+        ]
+
+        # Add projects search - use PostgreSQL-specific jsonb function for proper Unicode support
+        settings = get_settings()
+        if settings.database_url.startswith("postgresql"):
+            # PostgreSQL: use jsonb_array_elements_text for proper Unicode/Hebrew support
+            filters.append(
+                text("EXISTS (SELECT 1 FROM jsonb_array_elements_text(items.projects::jsonb) AS proj WHERE proj ILIKE :search_term)").bindparams(search_term=search_term)
             )
-        )
+
+        q = q.filter(or_(*filters))
 
     # Filter by storage unit
     if storage_unit_id:
@@ -61,10 +78,42 @@ async def search_items(
             )
         )
 
-    # Filter by room (requires joining)
+    # Filter by room (requires joining if not already joined)
     if room_id:
-        q = q.join(StorageUnit, Item.storage_unit_id == StorageUnit.id, isouter=True)
+        if not query:  # Only join if not already joined above
+            q = q.join(StorageUnit, Item.storage_unit_id == StorageUnit.id, isouter=True)
         q = q.filter(StorageUnit.room_id == room_id)
+
+    # For SQLite, we need to also search projects in Python since SQLite can't handle Unicode in JSON well
+    settings = get_settings()
+    is_sqlite = not settings.database_url.startswith("postgresql")
+
+    if is_sqlite and search_query_lower:
+        # Get IDs of items matching the SQL query
+        sql_matched_ids = set(item.id for item in q.all())
+
+        # Also search for items where any project matches the query (Python-side)
+        all_items_with_projects = db.query(Item).filter(
+            Item.status == status,
+            Item.projects != None
+        ).all()
+
+        project_matched_ids = set()
+        for item in all_items_with_projects:
+            if item.projects:
+                for project in item.projects:
+                    if search_query_lower in project.lower():
+                        project_matched_ids.add(item.id)
+                        break
+
+        # Combine both sets
+        all_matched_ids = sql_matched_ids | project_matched_ids
+
+        # Re-query with combined IDs
+        if all_matched_ids:
+            q = db.query(Item).filter(Item.id.in_(all_matched_ids))
+        else:
+            q = db.query(Item).filter(Item.id == None)  # Empty result
 
     total = q.count()
     items = q.order_by(Item.name).offset(offset).limit(limit).all()
@@ -76,22 +125,48 @@ async def search_items(
             **item.to_dict(),
             "room_id": None,
             "room_name": None,
+            "room_building": None,
+            "storage_unit_id": None,
             "storage_unit_label": None,
-            "compartment_name": None
+            "storage_unit_type": None,
+            "compartment_name": None,
+            "location_path": None  # Human-readable full path
         }
 
+        # Build location information
+        location_parts = []
+
         if item.storage_unit:
+            result["storage_unit_id"] = str(item.storage_unit.id)
             result["storage_unit_label"] = item.storage_unit.label
+            result["storage_unit_type"] = item.storage_unit.type
+            location_parts.append(item.storage_unit.label)
             if item.storage_unit.room:
                 result["room_id"] = str(item.storage_unit.room.id)
                 result["room_name"] = item.storage_unit.room.name
+                result["room_building"] = item.storage_unit.room.building
+                room_name = item.storage_unit.room.name
+                if item.storage_unit.room.building:
+                    room_name = f"{item.storage_unit.room.building} - {room_name}"
+                location_parts.insert(0, room_name)
         elif item.compartment:
             result["compartment_name"] = item.compartment.name
+            location_parts.append(item.compartment.name)
             if item.compartment.storage_unit:
+                result["storage_unit_id"] = str(item.compartment.storage_unit.id)
                 result["storage_unit_label"] = item.compartment.storage_unit.label
+                result["storage_unit_type"] = item.compartment.storage_unit.type
+                location_parts.insert(0, item.compartment.storage_unit.label)
                 if item.compartment.storage_unit.room:
                     result["room_id"] = str(item.compartment.storage_unit.room.id)
                     result["room_name"] = item.compartment.storage_unit.room.name
+                    result["room_building"] = item.compartment.storage_unit.room.building
+                    room_name = item.compartment.storage_unit.room.name
+                    if item.compartment.storage_unit.room.building:
+                        room_name = f"{item.compartment.storage_unit.room.building} - {room_name}"
+                    location_parts.insert(0, room_name)
+
+        result["location_path"] = " > ".join(location_parts) if location_parts else None
 
         results.append(result)
 

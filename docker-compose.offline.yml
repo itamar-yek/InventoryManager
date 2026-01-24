@@ -11,8 +11,6 @@
 # Usage:
 #   docker-compose -f docker-compose.offline.yml up -d
 
-version: '3.8'
-
 services:
   # ---------------------------------------------------------------------------
   # PostgreSQL Database

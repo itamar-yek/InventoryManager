@@ -48,6 +48,14 @@ chmod +x scripts/unix/*.sh
 | `install-deps.sh` | Install local Python/Node.js dependencies (without Docker) |
 | `dev-start.sh` | Start development servers locally (without Docker) |
 
+### Offline Deployment
+
+| Script | Description |
+|--------|-------------|
+| `export-images.sh` | Export Docker images for offline deployment (requires internet) |
+| `import-images.sh` | Import pre-exported Docker images on offline machine |
+| `setup-offline.sh` | Setup and start application on offline machine |
+
 ### Service Management (Docker)
 
 | Script | Description |
@@ -129,6 +137,23 @@ chmod +x scripts/unix/*.sh
 
 # Run all tests
 ./scripts/unix/run-all-tests.sh
+```
+
+### Offline Deployment Example
+
+```bash
+# ON MACHINE WITH INTERNET:
+# Export images (run once)
+./scripts/unix/export-images.sh
+
+# COPY ENTIRE PROJECT FOLDER TO OFFLINE MACHINE
+
+# ON OFFLINE MACHINE:
+# Import the pre-exported images
+./scripts/unix/import-images.sh
+
+# Start the application
+./scripts/unix/setup-offline.sh
 ```
 
 ## Notes

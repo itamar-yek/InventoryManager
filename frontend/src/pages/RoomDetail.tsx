@@ -7,9 +7,10 @@ import { useEffect, useState, useCallback } from 'react';
 import { useParams, Link, useSearchParams } from 'react-router-dom';
 import { useInventoryStore } from '../stores/inventoryStore';
 import { useAuthStore } from '../stores/authStore';
+import { roomsApi } from '../services/api';
 import RoomCanvas from '../components/RoomCanvas';
 import LoginPrompt from '../components/LoginPrompt';
-import type { StorageUnitCreate, StorageUnitType, StorageUnitUpdate, BlockCreate, ItemCreate, Item, DoorWall } from '../types';
+import type { StorageUnitCreate, StorageUnitType, StorageUnitUpdate, BlockCreate, ItemCreate, ItemUpdate, Item, DoorWall } from '../types';
 
 /**
  * Room detail with canvas and unit management
@@ -30,6 +31,7 @@ function RoomDetail() {
     items,
     fetchItems,
     createItem,
+    updateItem,
     deleteItem,
     moveItem,
     createBlock,
@@ -67,9 +69,15 @@ function RoomDetail() {
   const [showAddBlock, setShowAddBlock] = useState(false);
   const [showEditUnit, setShowEditUnit] = useState(false);
   const [showAddItem, setShowAddItem] = useState(false);
+  const [showEditItem, setShowEditItem] = useState(false);
+  const [showViewItem, setShowViewItem] = useState(false);
+  const [itemToView, setItemToView] = useState<Item | null>(null);
+  const [itemToEdit, setItemToEdit] = useState<Item | null>(null);
+  const [editItemData, setEditItemData] = useState<Partial<ItemUpdate>>({});
+  const [editItemProjectsInput, setEditItemProjectsInput] = useState('');
   const [showMoveItem, setShowMoveItem] = useState(false);
   const [itemToMove, setItemToMove] = useState<Item | null>(null);
-  const [newUnit, setNewUnit] = useState<Partial<StorageUnitCreate>>({
+    const [newUnit, setNewUnit] = useState<Partial<StorageUnitCreate>>({
     label: '',
     type: 'cabinet',
     x: 0,
@@ -246,6 +254,56 @@ function RoomDetail() {
   };
 
   /**
+   * Add a door to the room
+   */
+  const handleAddDoor = async (wall: DoorWall) => {
+    if (!currentRoom) return;
+    try {
+      const token = localStorage.getItem('access_token');
+      await fetch(`/api/rooms/${currentRoom.id}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          door_wall: wall,
+          door_position: 0.5, // Center of wall
+          door_width: 1
+        })
+      });
+      fetchRoom(currentRoom.id);
+    } catch (err) {
+      console.error('Failed to add door:', err);
+    }
+  };
+
+  /**
+   * Remove the door from the room
+   */
+  const handleRemoveDoor = async () => {
+    if (!currentRoom) return;
+    try {
+      const token = localStorage.getItem('access_token');
+      await fetch(`/api/rooms/${currentRoom.id}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          door_wall: null,
+          door_position: null,
+          door_width: null
+        })
+      });
+      fetchRoom(currentRoom.id);
+    } catch (err) {
+      console.error('Failed to remove door:', err);
+    }
+  };
+
+  /**
    * Handle block position change (drag)
    */
   const handleBlockMove = async (blockId: string, x: number, y: number) => {
@@ -292,14 +350,57 @@ function RoomDetail() {
   };
 
   /**
+   * Calculate a valid initial position for a new unit inside the room
+   */
+  const getValidInitialPosition = (unitWidth: number, unitHeight: number): { x: number; y: number } => {
+    if (!currentRoom) return { x: 0, y: 0 };
+
+    const roomW = currentRoom.width || 10;
+    const roomH = currentRoom.height || 10;
+    const isLShape = currentRoom.shape === 'l_shape';
+    const cutoutW = currentRoom.shape_cutout_width || 0;
+    const cutoutH = currentRoom.shape_cutout_height || 0;
+    const corner = currentRoom.shape_cutout_corner;
+
+    // For L-shaped rooms, find a valid corner that's not in the cutout
+    if (isLShape && cutoutW && cutoutH && corner) {
+      // Try corners in order of preference, avoiding the cutout corner
+      const margin = 0.5; // Small margin from walls
+      const corners = [
+        { x: margin, y: margin, blocked: corner === 'top_left' },
+        { x: roomW - unitWidth - margin, y: margin, blocked: corner === 'top_right' },
+        { x: margin, y: roomH - unitHeight - margin, blocked: corner === 'bottom_left' },
+        { x: roomW - unitWidth - margin, y: roomH - unitHeight - margin, blocked: corner === 'bottom_right' },
+      ];
+
+      // Find first valid corner
+      for (const c of corners) {
+        if (!c.blocked && c.x >= 0 && c.y >= 0) {
+          return { x: c.x, y: c.y };
+        }
+      }
+    }
+
+    // Default: top-left corner with margin
+    return { x: 0.5, y: 0.5 };
+  };
+
+  /**
    * Handle adding new storage unit
    */
   const handleAddUnit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!id) return;
 
+    // Calculate valid position based on room shape
+    const unitWidth = newUnit.width || 1;
+    const unitHeight = newUnit.height || 1;
+    const validPos = getValidInitialPosition(unitWidth, unitHeight);
+
     await createUnit({
       ...newUnit,
+      x: validPos.x,
+      y: validPos.y,
       room_id: id,
     } as StorageUnitCreate);
 
@@ -373,6 +474,70 @@ function RoomDetail() {
     if (confirm(`Are you sure you want to delete "${itemName}"?`)) {
       await deleteItem(itemId);
     }
+  };
+
+  /**
+   * Handle deleting all items in the selected unit
+   */
+  const handleDeleteAllItems = async () => {
+    if (items.length === 0) return;
+    if (confirm(`Are you sure you want to delete all ${items.length} item(s) in this unit? This cannot be undone.`)) {
+      for (const item of items) {
+        await deleteItem(item.id);
+      }
+    }
+  };
+
+  /**
+   * Quick quantity adjustment without opening edit modal
+   */
+  const handleQuickQuantityChange = async (itemId: string, currentQty: number, delta: number) => {
+    const newQty = Math.max(1, currentQty + delta);
+    if (newQty !== currentQty) {
+      await updateItem(itemId, { quantity: newQty });
+    }
+  };
+
+  /**
+   * Open edit item modal
+   */
+  const openEditItem = (item: Item) => {
+    setItemToEdit(item);
+    setEditItemData({
+      name: item.name,
+      unit_catalog_number: item.unit_catalog_number || '',
+      catalog_number: item.catalog_number || '',
+      serial_number: item.serial_number || '',
+      owned_by: item.owned_by || '',
+      description: item.description || '',
+      quantity: item.quantity,
+    });
+    setEditItemProjectsInput(item.projects?.join(', ') || '');
+    setShowEditItem(true);
+  };
+
+  /**
+   * Handle editing an item
+   */
+  const handleEditItem = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!itemToEdit) return;
+
+    // Parse projects from comma-separated input
+    const projects = editItemProjectsInput
+      .split(',')
+      .map(p => p.trim())
+      .filter(p => p.length > 0);
+
+    await updateItem(itemToEdit.id, {
+      ...editItemData,
+      projects,
+    } as ItemUpdate);
+
+    setShowEditItem(false);
+    setItemToEdit(null);
+    setEditItemData({});
+    setEditItemProjectsInput('');
   };
 
   /**
@@ -466,14 +631,7 @@ function RoomDetail() {
           <button
             onClick={async () => {
               try {
-                const token = localStorage.getItem('access_token');
-                const response = await fetch(`/api/rooms/${currentRoom.id}/export`, {
-                  headers: {
-                    'Authorization': `Bearer ${token}`
-                  }
-                });
-                if (!response.ok) throw new Error('Export failed');
-                const blob = await response.blob();
+                const blob = await roomsApi.exportCsv(currentRoom.id);
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
@@ -484,6 +642,7 @@ function RoomDetail() {
                 document.body.removeChild(a);
               } catch (err) {
                 console.error('Export failed:', err);
+                alert('Failed to export CSV. Please try again.');
               }
             }}
             className="btn-secondary"
@@ -546,6 +705,32 @@ function RoomDetail() {
               Click a storage unit to view its items.
               {canEdit() && ' Drag to reposition. Press Backspace to delete selected.'}
             </p>
+
+            {/* Door Management */}
+            {canEdit() && (
+              <div className="mt-4 pt-4 border-t border-gray-200">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={!!currentRoom.door_wall}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        handleAddDoor('north');
+                      } else {
+                        handleRemoveDoor();
+                      }
+                    }}
+                    className="w-4 h-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                  />
+                  <span className="text-sm font-medium text-gray-700">Show door</span>
+                </label>
+                {currentRoom.door_wall && (
+                  <p className="text-xs text-gray-500 mt-1 ml-6">
+                    Drag the door on the canvas to reposition
+                  </p>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
@@ -582,12 +767,22 @@ function RoomDetail() {
               </div>
 
               {canEdit() && (
-                <button
-                  onClick={() => setShowAddItem(true)}
-                  className="btn-primary text-sm w-full mb-4"
-                >
-                  + Add Item
-                </button>
+                <div className="flex gap-2 mb-4">
+                  <button
+                    onClick={() => setShowAddItem(true)}
+                    className="btn-primary text-sm flex-1"
+                  >
+                    + Add Item
+                  </button>
+                  {items.length > 0 && (
+                    <button
+                      onClick={handleDeleteAllItems}
+                      className="btn-secondary text-sm text-red-600 hover:text-red-800 hover:bg-red-50"
+                    >
+                      Delete All
+                    </button>
+                  )}
+                </div>
               )}
 
               <h3 className="font-medium mb-2">Items ({items.length})</h3>
@@ -625,12 +820,38 @@ function RoomDetail() {
                               Projects: {item.projects.join(', ')}
                             </p>
                           )}
-                          <p className="text-gray-400 text-xs">
-                            Qty: {item.quantity}
-                          </p>
+                          <div className="flex items-center gap-1 mt-1">
+                            <span className="text-gray-400 text-xs">Qty:</span>
+                            {canEdit() ? (
+                              <div className="flex items-center gap-1">
+                                <button
+                                  onClick={() => handleQuickQuantityChange(item.id, item.quantity, -1)}
+                                  className="w-5 h-5 rounded bg-gray-200 hover:bg-gray-300 text-xs font-bold flex items-center justify-center"
+                                  disabled={item.quantity <= 1}
+                                >
+                                  -
+                                </button>
+                                <span className="text-gray-600 text-xs w-6 text-center">{item.quantity}</span>
+                                <button
+                                  onClick={() => handleQuickQuantityChange(item.id, item.quantity, 1)}
+                                  className="w-5 h-5 rounded bg-gray-200 hover:bg-gray-300 text-xs font-bold flex items-center justify-center"
+                                >
+                                  +
+                                </button>
+                              </div>
+                            ) : (
+                              <span className="text-gray-400 text-xs">{item.quantity}</span>
+                            )}
+                          </div>
                         </div>
                         {canEdit() && (
                           <div className="flex flex-col gap-1 ml-2">
+                            <button
+                              onClick={() => openEditItem(item)}
+                              className="text-green-500 hover:text-green-700 text-xs"
+                            >
+                              Edit
+                            </button>
                             <button
                               onClick={() => openMoveItem(item)}
                               className="text-blue-500 hover:text-blue-700 text-xs"
@@ -1130,6 +1351,226 @@ function RoomDetail() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Item Modal */}
+      {showEditItem && itemToEdit && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md">
+            <h2 className="text-xl font-bold mb-4">Edit Item</h2>
+
+            <form onSubmit={handleEditItem} className="space-y-4">
+              <div>
+                <label htmlFor="editItemName" className="label">Name *</label>
+                <input
+                  id="editItemName"
+                  type="text"
+                  value={editItemData.name || ''}
+                  onChange={(e) => setEditItemData({ ...editItemData, name: e.target.value })}
+                  className="input"
+                  required
+                  autoFocus
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label htmlFor="editUnitCatalogNumber" className="label">Unit Catalog Number</label>
+                  <input
+                    id="editUnitCatalogNumber"
+                    type="text"
+                    value={editItemData.unit_catalog_number || ''}
+                    onChange={(e) => setEditItemData({ ...editItemData, unit_catalog_number: e.target.value })}
+                    className="input"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="editCatalogNumber" className="label">Catalog Number</label>
+                  <input
+                    id="editCatalogNumber"
+                    type="text"
+                    value={editItemData.catalog_number || ''}
+                    onChange={(e) => setEditItemData({ ...editItemData, catalog_number: e.target.value })}
+                    className="input"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label htmlFor="editSerialNumber" className="label">Serial Number</label>
+                <input
+                  id="editSerialNumber"
+                  type="text"
+                  value={editItemData.serial_number || ''}
+                  onChange={(e) => setEditItemData({ ...editItemData, serial_number: e.target.value })}
+                  className="input"
+                />
+              </div>
+
+              <div>
+                <label htmlFor="editOwnedBy" className="label">Owned By</label>
+                <input
+                  id="editOwnedBy"
+                  type="text"
+                  value={editItemData.owned_by || ''}
+                  onChange={(e) => setEditItemData({ ...editItemData, owned_by: e.target.value })}
+                  className="input"
+                />
+              </div>
+
+              <div>
+                <label htmlFor="editQuantity" className="label">Quantity</label>
+                <input
+                  id="editQuantity"
+                  type="number"
+                  value={editItemData.quantity || 1}
+                  onChange={(e) => setEditItemData({ ...editItemData, quantity: Number(e.target.value) })}
+                  className="input"
+                  min="1"
+                />
+              </div>
+
+              <div>
+                <label htmlFor="editProjects" className="label">Projects</label>
+                <input
+                  id="editProjects"
+                  type="text"
+                  value={editItemProjectsInput}
+                  onChange={(e) => setEditItemProjectsInput(e.target.value)}
+                  className="input"
+                  placeholder="e.g., Project A, Project B"
+                />
+                <p className="text-xs text-gray-500 mt-1">Comma-separated list of projects</p>
+              </div>
+
+              <div>
+                <label htmlFor="editDescription" className="label">Description</label>
+                <textarea
+                  id="editDescription"
+                  value={editItemData.description || ''}
+                  onChange={(e) => setEditItemData({ ...editItemData, description: e.target.value })}
+                  className="input"
+                  rows={3}
+                />
+              </div>
+
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowEditItem(false);
+                    setItemToEdit(null);
+                  }}
+                  className="btn-secondary"
+                >
+                  Cancel
+                </button>
+                <button type="submit" className="btn-primary">
+                  Save Changes
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* View Item Modal */}
+      {showViewItem && itemToView && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md">
+            <div className="flex justify-between items-start mb-4">
+              <h2 className="text-xl font-bold">{itemToView.name}</h2>
+              <button
+                onClick={() => { setShowViewItem(false); setItemToView(null); }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                &times;
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div className="flex justify-between border-b pb-2">
+                <span className="text-gray-500">Quantity</span>
+                <span className="font-medium">{itemToView.quantity}</span>
+              </div>
+
+              {itemToView.unit_catalog_number && (
+                <div className="flex justify-between border-b pb-2">
+                  <span className="text-gray-500">Unit Catalog #</span>
+                  <span className="font-medium">{itemToView.unit_catalog_number}</span>
+                </div>
+              )}
+
+              {itemToView.catalog_number && (
+                <div className="flex justify-between border-b pb-2">
+                  <span className="text-gray-500">Catalog #</span>
+                  <span className="font-medium">{itemToView.catalog_number}</span>
+                </div>
+              )}
+
+              {itemToView.serial_number && (
+                <div className="flex justify-between border-b pb-2">
+                  <span className="text-gray-500">Serial #</span>
+                  <span className="font-medium">{itemToView.serial_number}</span>
+                </div>
+              )}
+
+              {itemToView.owned_by && (
+                <div className="flex justify-between border-b pb-2">
+                  <span className="text-gray-500">Owned By</span>
+                  <span className="font-medium">{itemToView.owned_by}</span>
+                </div>
+              )}
+
+              {itemToView.projects && itemToView.projects.length > 0 && (
+                <div className="flex justify-between border-b pb-2">
+                  <span className="text-gray-500">Projects</span>
+                  <span className="font-medium">{itemToView.projects.join(', ')}</span>
+                </div>
+              )}
+
+              {itemToView.description && (
+                <div className="border-b pb-2">
+                  <span className="text-gray-500 block mb-1">Description</span>
+                  <p className="text-sm">{itemToView.description}</p>
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-2 mt-6">
+              {canEdit() && (
+                <>
+                  <button
+                    onClick={() => {
+                      setShowViewItem(false);
+                      openMoveItem(itemToView);
+                    }}
+                    className="btn-secondary text-blue-600"
+                  >
+                    Move
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowViewItem(false);
+                      openEditItem(itemToView);
+                    }}
+                    className="btn-primary"
+                  >
+                    Edit
+                  </button>
+                </>
+              )}
+              {!canEdit() && (
+                <button
+                  onClick={() => { setShowViewItem(false); setItemToView(null); }}
+                  className="btn-secondary"
+                >
+                  Close
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}

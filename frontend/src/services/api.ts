@@ -190,6 +190,16 @@ export const roomsApi = {
   async delete(id: string): Promise<void> {
     await api.delete(`/rooms/${id}`);
   },
+
+  /**
+   * Export room inventory as CSV
+   */
+  async exportCsv(id: string): Promise<Blob> {
+    const response = await api.get(`/rooms/${id}/export`, {
+      responseType: 'blob',
+    });
+    return response.data;
+  },
 };
 
 // =============================================================================

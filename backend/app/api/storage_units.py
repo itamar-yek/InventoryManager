@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.storage_unit import StorageUnit
 from app.models.room import Room
-from app.models.item import Item
+from app.models.item import Item, ItemStatus
 from app.models.user import User, UserRole
 from app.schemas.storage_unit import StorageUnitCreate, StorageUnitUpdate, StorageUnitResponse
 from app.api.deps import get_current_user, require_role
@@ -107,13 +107,23 @@ async def delete_storage_unit(
             detail="Storage unit not found"
         )
 
-    # Check if there are items in this unit
-    item_count = db.query(Item).filter(Item.storage_unit_id == unit_id).count()
+    # Check if there are ACTIVE items in this unit (ignore soft-deleted)
+    item_count = db.query(Item).filter(
+        Item.storage_unit_id == unit_id,
+        Item.status == ItemStatus.ACTIVE
+    ).count()
     if item_count > 0:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Cannot delete storage unit with {item_count} item(s). Move or delete items first."
         )
+
+    # Hard delete any soft-deleted items before deleting the unit
+    # (Can't set storage_unit_id to NULL due to check_item_has_location constraint)
+    db.query(Item).filter(
+        Item.storage_unit_id == unit_id,
+        Item.status == ItemStatus.DELETED
+    ).delete(synchronize_session=False)
 
     db.delete(unit)
     db.commit()
