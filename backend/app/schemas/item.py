@@ -75,3 +75,31 @@ class ItemSearchResult(ItemResponse):
     room_name: Optional[str] = None
     storage_unit_label: Optional[str] = None
     compartment_name: Optional[str] = None
+
+
+# =============================================================================
+# Batch Operation Schemas
+# =============================================================================
+
+class BatchItemDelete(BaseModel):
+    """Schema for batch delete operation."""
+    item_ids: List[UUID] = Field(..., min_length=1, max_length=100)
+
+
+class BatchItemMove(BaseModel):
+    """Schema for batch move operation."""
+    item_ids: List[UUID] = Field(..., min_length=1, max_length=100)
+    to_storage_unit_id: UUID
+    reason: Optional[str] = None
+
+
+class MoveAllItemsRequest(BaseModel):
+    """Schema for moving all items from a storage unit."""
+    to_storage_unit_id: UUID
+    reason: Optional[str] = None
+
+
+class BatchOperationResult(BaseModel):
+    """Schema for batch operation results."""
+    success_count: int
+    moved_count: Optional[int] = None  # For move operations

@@ -34,6 +34,8 @@ function RoomDetail() {
     updateItem,
     deleteItem,
     moveItem,
+    batchDeleteItems,
+    batchMoveItems,
     createBlock,
     updateBlock,
     deleteBlock,
@@ -112,6 +114,14 @@ function RoomDetail() {
   const [moveTargetUnit, setMoveTargetUnit] = useState<string>('');
   const [targetRoomUnits, setTargetRoomUnits] = useState<{ id: string; label: string }[]>([]);
 
+  // Multi-select state
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(new Set());
+  const [showBatchMoveModal, setShowBatchMoveModal] = useState(false);
+  const [batchMoveTargetRoom, setBatchMoveTargetRoom] = useState<string>('');
+  const [batchMoveTargetUnit, setBatchMoveTargetUnit] = useState<string>('');
+  const [batchTargetRoomUnits, setBatchTargetRoomUnits] = useState<{ id: string; label: string }[]>([]);
+
   // Fetch room on mount
   useEffect(() => {
     if (id) {
@@ -141,10 +151,12 @@ function RoomDetail() {
     fetchRooms();
   }, []);
 
-  // Fetch items when unit is selected
+  // Fetch items when unit is selected, clear selection
   useEffect(() => {
     if (selectedUnitId) {
       fetchItems(selectedUnitId);
+      setSelectedItemIds(new Set()); // Clear selection when switching units
+      setSelectMode(false); // Exit select mode when switching units
     }
   }, [selectedUnitId]);
 
@@ -220,6 +232,52 @@ function RoomDetail() {
     }
     setMoveTargetUnit('');
   }, [moveTargetRoom, rooms, currentRoom]);
+
+  // Update batch move target room units when room selection changes
+  useEffect(() => {
+    if (batchMoveTargetRoom && rooms.length > 0) {
+      if (currentRoom && batchMoveTargetRoom === currentRoom.id) {
+        setBatchTargetRoomUnits(currentRoom.storage_units.map(u => ({ id: u.id, label: u.label })));
+      } else {
+        fetch(`/api/rooms/${batchMoveTargetRoom}`, {
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('access_token')}`
+          }
+        })
+          .then(res => res.json())
+          .then(data => {
+            setBatchTargetRoomUnits(data.storage_units?.map((u: { id: string; label: string }) => ({ id: u.id, label: u.label })) || []);
+          })
+          .catch(() => setBatchTargetRoomUnits([]));
+      }
+    } else {
+      setBatchTargetRoomUnits([]);
+    }
+    setBatchMoveTargetUnit('');
+  }, [batchMoveTargetRoom, rooms, currentRoom]);
+
+  // Selection helper functions
+  const toggleItemSelection = (itemId: string) => {
+    setSelectedItemIds(prev => {
+      const next = new Set(prev);
+      if (next.has(itemId)) {
+        next.delete(itemId);
+      } else {
+        next.add(itemId);
+      }
+      return next;
+    });
+  };
+
+  const selectAllItems = () => {
+    setSelectedItemIds(new Set(items.map(i => i.id)));
+  };
+
+  const clearSelection = () => {
+    setSelectedItemIds(new Set());
+  };
+
+  const isAllSelected = items.length > 0 && selectedItemIds.size === items.length;
 
   /**
    * Handle unit position change (drag)
@@ -477,14 +535,31 @@ function RoomDetail() {
   };
 
   /**
-   * Handle deleting all items in the selected unit
+   * Handle batch delete of selected items
    */
-  const handleDeleteAllItems = async () => {
-    if (items.length === 0) return;
-    if (confirm(`Are you sure you want to delete all ${items.length} item(s) in this unit? This cannot be undone.`)) {
-      for (const item of items) {
-        await deleteItem(item.id);
+  const handleBatchDelete = async () => {
+    if (selectedItemIds.size === 0) return;
+    if (confirm(`Delete ${selectedItemIds.size} selected item(s)? This cannot be undone.`)) {
+      const result = await batchDeleteItems(Array.from(selectedItemIds));
+      if (result) {
+        clearSelection();
       }
+    }
+  };
+
+  /**
+   * Handle batch move of selected items
+   */
+  const handleBatchMove = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (selectedItemIds.size === 0 || !batchMoveTargetUnit) return;
+
+    const result = await batchMoveItems(Array.from(selectedItemIds), batchMoveTargetUnit, 'Batch move via UI');
+    if (result) {
+      setShowBatchMoveModal(false);
+      clearSelection();
+      setBatchMoveTargetRoom('');
+      setBatchMoveTargetUnit('');
     }
   };
 
@@ -774,27 +849,78 @@ function RoomDetail() {
                   >
                     + Add Item
                   </button>
-                  {items.length > 0 && (
-                    <button
-                      onClick={handleDeleteAllItems}
-                      className="btn-secondary text-sm text-red-600 hover:text-red-800 hover:bg-red-50"
-                    >
-                      Delete All
-                    </button>
-                  )}
                 </div>
               )}
 
-              <h3 className="font-medium mb-2">Items ({items.length})</h3>
+              {/* Items header with select toggle */}
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="font-medium">Items ({items.length})</h3>
+                {canEdit() && items.length > 0 && (
+                  <button
+                    onClick={() => {
+                      if (selectMode) {
+                        setSelectMode(false);
+                        setSelectedItemIds(new Set());
+                      } else {
+                        setSelectMode(true);
+                      }
+                    }}
+                    className={`text-xs px-2 py-1 rounded ${selectMode ? 'bg-primary-100 text-primary-700' : 'text-gray-500 hover:bg-gray-100'}`}
+                  >
+                    {selectMode ? 'Done' : 'Select'}
+                  </button>
+                )}
+              </div>
+
+              {/* Selection action bar - only visible in select mode */}
+              {canEdit() && selectMode && (
+                <div className="mb-2 p-2 bg-primary-50 rounded flex items-center gap-2 flex-wrap">
+                  <label className="flex items-center gap-1 text-xs cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={isAllSelected}
+                      onChange={(e) => e.target.checked ? selectAllItems() : setSelectedItemIds(new Set())}
+                      className="w-3 h-3 rounded"
+                    />
+                    <span className="text-gray-600">All</span>
+                  </label>
+                  {selectedItemIds.size > 0 && (
+                    <>
+                      <span className="text-sm text-primary-700 font-medium ml-2">{selectedItemIds.size} selected</span>
+                      <button
+                        onClick={() => setShowBatchMoveModal(true)}
+                        className="text-xs btn-secondary py-1 px-2"
+                      >
+                        Move
+                      </button>
+                      <button
+                        onClick={handleBatchDelete}
+                        className="text-xs btn-secondary py-1 px-2 text-red-600"
+                      >
+                        Delete
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
               {items.length === 0 ? (
                 <p className="text-sm text-gray-500">No items in this unit</p>
               ) : (
                 <ul className="space-y-2 max-h-96 overflow-auto">
                   {items.map((item) => (
-                    <li key={item.id} className="p-2 bg-gray-50 rounded text-sm">
-                      <div className="flex justify-between items-start">
-                        <div className="flex-1">
-                          <p className="font-medium">{item.name}</p>
+                    <li key={item.id} className={`p-2 rounded text-sm ${selectMode && selectedItemIds.has(item.id) ? 'bg-primary-50 border border-primary-200' : 'bg-gray-50'}`}>
+                      <div className="flex items-start gap-2">
+                        {selectMode && (
+                          <input
+                            type="checkbox"
+                            checked={selectedItemIds.has(item.id)}
+                            onChange={() => toggleItemSelection(item.id)}
+                            className="mt-1 w-4 h-4 rounded border-gray-300"
+                          />
+                        )}
+                        <div className="flex-1 flex justify-between items-start">
+                          <div className="flex-1">
+                            <p className="font-medium">{item.name}</p>
                           {item.unit_catalog_number && (
                             <p className="text-gray-500 text-xs">
                               Unit Cat #: {item.unit_catalog_number}
@@ -866,6 +992,7 @@ function RoomDetail() {
                             </button>
                           </div>
                         )}
+                        </div>
                       </div>
                     </li>
                   ))}
@@ -1348,6 +1475,86 @@ function RoomDetail() {
                   disabled={!moveTargetUnit}
                 >
                   Move Item
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Batch Move Modal */}
+      {showBatchMoveModal && selectedItemIds.size > 0 && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md">
+            <h2 className="text-xl font-bold mb-4">Move {selectedItemIds.size} Items</h2>
+            <p className="text-gray-600 mb-4">
+              Move selected items to a new storage unit.
+            </p>
+
+            <form onSubmit={handleBatchMove} className="space-y-4">
+              <div>
+                <label htmlFor="batchTargetRoom" className="label">Target Room *</label>
+                <select
+                  id="batchTargetRoom"
+                  value={batchMoveTargetRoom}
+                  onChange={(e) => setBatchMoveTargetRoom(e.target.value)}
+                  className="input"
+                  required
+                >
+                  <option value="">Select a room...</option>
+                  {rooms.map((room) => (
+                    <option key={room.id} value={room.id}>
+                      {room.name} {room.building ? `(${room.building})` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label htmlFor="batchTargetUnit" className="label">Target Storage Unit *</label>
+                <select
+                  id="batchTargetUnit"
+                  value={batchMoveTargetUnit}
+                  onChange={(e) => setBatchMoveTargetUnit(e.target.value)}
+                  className="input"
+                  required
+                  disabled={!batchMoveTargetRoom || batchTargetRoomUnits.length === 0}
+                >
+                  <option value="">
+                    {!batchMoveTargetRoom
+                      ? 'Select a room first...'
+                      : batchTargetRoomUnits.length === 0
+                        ? 'No storage units in this room'
+                        : 'Select a storage unit...'}
+                  </option>
+                  {batchTargetRoomUnits
+                    .filter(u => u.id !== selectedUnitId)
+                    .map((unit) => (
+                      <option key={unit.id} value={unit.id}>
+                        {unit.label}
+                      </option>
+                    ))}
+                </select>
+              </div>
+
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowBatchMoveModal(false);
+                    setBatchMoveTargetRoom('');
+                    setBatchMoveTargetUnit('');
+                  }}
+                  className="btn-secondary"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn-primary"
+                  disabled={!batchMoveTargetUnit}
+                >
+                  Move Items
                 </button>
               </div>
             </form>

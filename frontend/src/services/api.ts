@@ -30,6 +30,10 @@ import type {
   ItemMovement,
   SearchResults,
   ApiError,
+  BatchDeleteRequest,
+  BatchMoveRequest,
+  MoveAllItemsRequest,
+  BatchOperationResult,
 } from '../types';
 
 // =============================================================================
@@ -246,6 +250,14 @@ export const storageUnitsApi = {
   async delete(id: string): Promise<void> {
     await api.delete(`/storage-units/${id}`);
   },
+
+  /**
+   * Move all items from a storage unit to another
+   */
+  async moveAllItems(unitId: string, data: MoveAllItemsRequest): Promise<BatchOperationResult> {
+    const response = await api.post<BatchOperationResult>(`/storage-units/${unitId}/move-all-items`, data);
+    return response.data;
+  },
 };
 
 // =============================================================================
@@ -416,6 +428,22 @@ export const itemsApi = {
    */
   async getHistory(id: string): Promise<ItemMovement[]> {
     const response = await api.get<ItemMovement[]>(`/items/${id}/history`);
+    return response.data;
+  },
+
+  /**
+   * Batch delete multiple items
+   */
+  async batchDelete(data: BatchDeleteRequest): Promise<BatchOperationResult> {
+    const response = await api.post<BatchOperationResult>('/items/batch/delete', data);
+    return response.data;
+  },
+
+  /**
+   * Batch move multiple items to a new storage unit
+   */
+  async batchMove(data: BatchMoveRequest): Promise<BatchOperationResult> {
+    const response = await api.post<BatchOperationResult>('/items/batch/move', data);
     return response.data;
   },
 };

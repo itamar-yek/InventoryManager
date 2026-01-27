@@ -21,6 +21,7 @@ import type {
   ItemUpdate,
   ItemMove,
   ItemSearchResult,
+  BatchOperationResult,
 } from '../types';
 import { roomsApi, storageUnitsApi, blocksApi, itemsApi } from '../services/api';
 
@@ -99,6 +100,12 @@ interface InventoryState {
   moveItem: (id: string, data: ItemMove) => Promise<Item | null>;
   /** Delete an item */
   deleteItem: (id: string) => Promise<boolean>;
+  /** Batch delete multiple items */
+  batchDeleteItems: (itemIds: string[]) => Promise<BatchOperationResult | null>;
+  /** Batch move multiple items */
+  batchMoveItems: (itemIds: string[], toStorageUnitId: string, reason?: string) => Promise<BatchOperationResult | null>;
+  /** Move all items from a storage unit */
+  moveAllItemsFromUnit: (fromUnitId: string, toUnitId: string, reason?: string) => Promise<number | null>;
 
   // Search
   /** Search items */
@@ -367,6 +374,68 @@ export const useInventoryStore = create<InventoryState>((set, get) => ({
       const message = getErrorMessage(error, 'Failed to delete item');
       set({ error: message, isLoading: false });
       return false;
+    }
+  },
+
+  batchDeleteItems: async (itemIds: string[]) => {
+    set({ isLoading: true, error: null });
+    try {
+      const result = await itemsApi.batchDelete({ item_ids: itemIds });
+      // Remove deleted items from local state
+      set((state) => ({
+        items: state.items.filter((i) => !itemIds.includes(i.id)),
+        searchResults: state.searchResults.filter((i) => !itemIds.includes(i.id)),
+        searchTotal: Math.max(0, state.searchTotal - result.success_count),
+        isLoading: false,
+      }));
+      return result;
+    } catch (error: unknown) {
+      const message = getErrorMessage(error, 'Failed to delete items');
+      set({ error: message, isLoading: false });
+      return null;
+    }
+  },
+
+  batchMoveItems: async (itemIds: string[], toStorageUnitId: string, reason?: string) => {
+    set({ isLoading: true, error: null });
+    try {
+      const result = await itemsApi.batchMove({
+        item_ids: itemIds,
+        to_storage_unit_id: toStorageUnitId,
+        reason,
+      });
+      // Remove moved items from local state (they moved elsewhere)
+      set((state) => ({
+        items: state.items.filter((i) => !itemIds.includes(i.id)),
+        isLoading: false,
+      }));
+      return result;
+    } catch (error: unknown) {
+      const message = getErrorMessage(error, 'Failed to move items');
+      set({ error: message, isLoading: false });
+      return null;
+    }
+  },
+
+  moveAllItemsFromUnit: async (fromUnitId: string, toUnitId: string, reason?: string) => {
+    set({ isLoading: true, error: null });
+    try {
+      const result = await storageUnitsApi.moveAllItems(fromUnitId, {
+        to_storage_unit_id: toUnitId,
+        reason,
+      });
+      // Clear items if viewing the source unit
+      const { selectedUnitId } = get();
+      if (selectedUnitId === fromUnitId) {
+        set({ items: [], isLoading: false });
+      } else {
+        set({ isLoading: false });
+      }
+      return result.moved_count ?? result.success_count;
+    } catch (error: unknown) {
+      const message = getErrorMessage(error, 'Failed to move items');
+      set({ error: message, isLoading: false });
+      return null;
     }
   },
 

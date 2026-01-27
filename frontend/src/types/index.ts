@@ -358,3 +358,31 @@ export interface PaginatedResponse<T> {
   limit: number;
   offset: number;
 }
+
+// =============================================================================
+// Batch Operation Types
+// =============================================================================
+
+/** Request to batch delete items */
+export interface BatchDeleteRequest {
+  item_ids: string[];
+}
+
+/** Request to batch move items */
+export interface BatchMoveRequest {
+  item_ids: string[];
+  to_storage_unit_id: string;
+  reason?: string;
+}
+
+/** Request to move all items from a storage unit */
+export interface MoveAllItemsRequest {
+  to_storage_unit_id: string;
+  reason?: string;
+}
+
+/** Result of a batch operation */
+export interface BatchOperationResult {
+  success_count: number;
+  moved_count?: number;
+}

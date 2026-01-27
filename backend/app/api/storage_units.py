@@ -11,8 +11,10 @@ from app.database import get_db
 from app.models.storage_unit import StorageUnit
 from app.models.room import Room
 from app.models.item import Item, ItemStatus
+from app.models.item_movement import ItemMovement
 from app.models.user import User, UserRole
 from app.schemas.storage_unit import StorageUnitCreate, StorageUnitUpdate, StorageUnitResponse
+from app.schemas.item import MoveAllItemsRequest, BatchOperationResult
 from app.api.deps import get_current_user, require_role
 
 router = APIRouter()
@@ -127,3 +129,63 @@ async def delete_storage_unit(
 
     db.delete(unit)
     db.commit()
+
+
+@router.post("/{unit_id}/move-all-items", response_model=BatchOperationResult)
+async def move_all_items_from_unit(
+    unit_id: UUID,
+    data: MoveAllItemsRequest,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(require_role(UserRole.EDITOR))]
+):
+    """Move all active items from this storage unit to another."""
+    # Verify source unit exists
+    source_unit = db.query(StorageUnit).filter(StorageUnit.id == unit_id).first()
+    if not source_unit:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Source storage unit not found"
+        )
+
+    # Verify destination unit exists and is different
+    if data.to_storage_unit_id == unit_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Destination must be different from source"
+        )
+
+    destination = db.query(StorageUnit).filter(StorageUnit.id == data.to_storage_unit_id).first()
+    if not destination:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Destination storage unit not found"
+        )
+
+    # Get all active items in source unit
+    items = db.query(Item).filter(
+        Item.storage_unit_id == unit_id,
+        Item.status == ItemStatus.ACTIVE
+    ).all()
+
+    if not items:
+        return BatchOperationResult(success_count=0, moved_count=0)
+
+    # Create movement records and update items
+    for item in items:
+        movement = ItemMovement(
+            item_id=item.id,
+            user_id=current_user.id,
+            from_storage_unit_id=item.storage_unit_id,
+            from_compartment_id=item.compartment_id,
+            to_storage_unit_id=data.to_storage_unit_id,
+            to_compartment_id=None,
+            reason=data.reason or f"Moved all items from {source_unit.label}"
+        )
+        db.add(movement)
+
+        item.storage_unit_id = data.to_storage_unit_id
+        item.compartment_id = None
+
+    db.commit()
+
+    return BatchOperationResult(success_count=len(items), moved_count=len(items))
