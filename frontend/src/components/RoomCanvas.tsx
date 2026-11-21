@@ -100,6 +100,27 @@ const unitColors: Record<StorageUnitType, string> = {
   other: '#6b7280',     // Gray
 };
 
+/** Axis-aligned rectangle in room coordinates (meters) */
+interface Footprint { x: number; y: number; w: number; h: number; }
+
+/**
+ * Area an element actually occupies on the floor.
+ * Elements are drawn rotated around their centre, so at 90/270 degrees the
+ * visible rectangle has width and height swapped around the same centre.
+ * Collision and wall checks must use this, not the unrotated x/y/width/height.
+ */
+export function footprint(x: number, y: number, w: number, h: number, rotation = 0): Footprint {
+  const r = (((rotation || 0) % 180) + 180) % 180;
+  if (r === 90) {
+    return { x: x + (w - h) / 2, y: y + (h - w) / 2, w: h, h: w };
+  }
+  return { x, y, w, h };
+}
+
+function footprintsOverlap(a: Footprint, b: Footprint): boolean {
+  return rectanglesOverlap(a.x, a.y, a.w, a.h, b.x, b.y, b.w, b.h);
+}
+
 /**
  * Check if two rectangles overlap
  */
@@ -806,21 +827,24 @@ function RoomCanvas({
         const newX = (svgP.x - offsetX - dragOffset.x) / scale;
         const newY = (svgP.y - offsetY - dragOffset.y) / scale;
 
-        // Constrain to room boundaries
-        const clampedX = Math.max(0, Math.min(roomWidth - unit.width, newX));
-        const clampedY = Math.max(0, Math.min(roomHeight - unit.height, newY));
+        // Constrain to room boundaries (using the rotated footprint)
+        const off = footprint(0, 0, unit.width, unit.height, unit.rotation);
+        // Stored x/y must stay >= 0 (the API rejects negative positions)
+        const clampedX = Math.max(0, -off.x, Math.min(roomWidth - off.w - off.x, newX));
+        const clampedY = Math.max(0, -off.y, Math.min(roomHeight - off.h - off.y, newY));
 
         // Helper to check if position is valid
         const isValidPosition = (x: number, y: number) => {
-          if (!isInsideRoom(x, y, unit.width, unit.height, roomWidth, roomHeight, shape, shapeCutoutWidth, shapeCutoutHeight, shapeCutoutCorner)) {
+          const fp = footprint(x, y, unit.width, unit.height, unit.rotation);
+          if (!isInsideRoom(fp.x, fp.y, fp.w, fp.h, roomWidth, roomHeight, shape, shapeCutoutWidth, shapeCutoutHeight, shapeCutoutCorner)) {
             return false;
           }
           const collidesWithUnit = units.some(other =>
             other.id !== unit.id &&
-            rectanglesOverlap(x, y, unit.width, unit.height, other.x, other.y, other.width, other.height)
+            footprintsOverlap(fp, footprint(other.x, other.y, other.width, other.height, other.rotation))
           );
           const collidesWithBlock = blocks.some(block =>
-            rectanglesOverlap(x, y, unit.width, unit.height, block.x, block.y, block.width, block.height)
+            footprintsOverlap(fp, footprint(block.x, block.y, block.width, block.height, block.rotation))
           );
           return !collidesWithUnit && !collidesWithBlock;
         };
@@ -860,21 +884,24 @@ function RoomCanvas({
         const newX = (svgP.x - offsetX - dragOffset.x) / scale;
         const newY = (svgP.y - offsetY - dragOffset.y) / scale;
 
-        // Constrain to room boundaries
-        const clampedX = Math.max(0, Math.min(roomWidth - block.width, newX));
-        const clampedY = Math.max(0, Math.min(roomHeight - block.height, newY));
+        // Constrain to room boundaries (using the rotated footprint)
+        const off = footprint(0, 0, block.width, block.height, block.rotation);
+        // Stored x/y must stay >= 0 (the API rejects negative positions)
+        const clampedX = Math.max(0, -off.x, Math.min(roomWidth - off.w - off.x, newX));
+        const clampedY = Math.max(0, -off.y, Math.min(roomHeight - off.h - off.y, newY));
 
         // Helper to check if position is valid
         const isValidPosition = (x: number, y: number) => {
-          if (!isInsideRoom(x, y, block.width, block.height, roomWidth, roomHeight, shape, shapeCutoutWidth, shapeCutoutHeight, shapeCutoutCorner)) {
+          const fp = footprint(x, y, block.width, block.height, block.rotation);
+          if (!isInsideRoom(fp.x, fp.y, fp.w, fp.h, roomWidth, roomHeight, shape, shapeCutoutWidth, shapeCutoutHeight, shapeCutoutCorner)) {
             return false;
           }
           const collidesWithBlock = blocks.some(other =>
             other.id !== block.id &&
-            rectanglesOverlap(x, y, block.width, block.height, other.x, other.y, other.width, other.height)
+            footprintsOverlap(fp, footprint(other.x, other.y, other.width, other.height, other.rotation))
           );
           const collidesWithUnit = units.some(u =>
-            rectanglesOverlap(x, y, block.width, block.height, u.x, u.y, u.width, u.height)
+            footprintsOverlap(fp, footprint(u.x, u.y, u.width, u.height, u.rotation))
           );
           return !collidesWithBlock && !collidesWithUnit;
         };
@@ -926,44 +953,35 @@ function RoomCanvas({
         ? units.find(u => u.id === dragging.id)
         : blocks.find(b => b.id === dragging.id);
       if (element) {
-        // Limit so element stays in room
-        const maxWidth = roomWidth - element.x;
-        const maxHeight = roomHeight - element.y;
-        newWidth = Math.min(newWidth, maxWidth);
-        newHeight = Math.min(newHeight, maxHeight);
-
-        // For L-shaped rooms, also check if new size overlaps with cutout
-        if (!isInsideRoom(element.x, element.y, newWidth, newHeight, roomWidth, roomHeight, shape, shapeCutoutWidth, shapeCutoutHeight, shapeCutoutCorner)) {
-          // Keep current size if new size would overlap cutout
-          newWidth = localSize?.width || element.width;
-          newHeight = localSize?.height || element.height;
+        const isRotated = footprint(0, 0, 2, 1, element.rotation).w === 1;
+        // Limit so element stays in room (unrotated case; rotated elements are
+        // checked with their real footprint below)
+        if (!isRotated) {
+          newWidth = Math.min(newWidth, roomWidth - element.x);
+          newHeight = Math.min(newHeight, roomHeight - element.y);
         }
 
-        // Check for collisions with other elements
-        if (dragging.type === 'resize-unit') {
-          const collidesWithUnit = units.some(other =>
-            other.id !== element.id &&
-            rectanglesOverlap(element.x, element.y, newWidth, newHeight, other.x, other.y, other.width, other.height)
-          );
-          const collidesWithBlock = blocks.some(block =>
-            rectanglesOverlap(element.x, element.y, newWidth, newHeight, block.x, block.y, block.width, block.height)
-          );
-          if (collidesWithUnit || collidesWithBlock) {
-            newWidth = localSize?.width || element.width;
-            newHeight = localSize?.height || element.height;
-          }
+        const keepSize = () => {
+          newWidth = localSize?.width || element.width;
+          newHeight = localSize?.height || element.height;
+        };
+        const fp = footprint(element.x, element.y, newWidth, newHeight, element.rotation);
+
+        // Must stay inside the room (incl. L-shape cutout)
+        if (!isInsideRoom(fp.x, fp.y, fp.w, fp.h, roomWidth, roomHeight, shape, shapeCutoutWidth, shapeCutoutHeight, shapeCutoutCorner)) {
+          keepSize();
         } else {
-          const collidesWithBlock = blocks.some(other =>
-            other.id !== element.id &&
-            rectanglesOverlap(element.x, element.y, newWidth, newHeight, other.x, other.y, other.width, other.height)
-          );
-          const collidesWithUnit = units.some(unit =>
-            rectanglesOverlap(element.x, element.y, newWidth, newHeight, unit.x, unit.y, unit.width, unit.height)
-          );
-          if (collidesWithBlock || collidesWithUnit) {
-            newWidth = localSize?.width || element.width;
-            newHeight = localSize?.height || element.height;
-          }
+          // Check for collisions with other elements
+          const collides =
+            units.some(other =>
+              !(dragging.type === 'resize-unit' && other.id === element.id) &&
+              footprintsOverlap(fp, footprint(other.x, other.y, other.width, other.height, other.rotation))
+            ) ||
+            blocks.some(other =>
+              !(dragging.type === 'resize-block' && other.id === element.id) &&
+              footprintsOverlap(fp, footprint(other.x, other.y, other.width, other.height, other.rotation))
+            );
+          if (collides) keepSize();
         }
       }
 
