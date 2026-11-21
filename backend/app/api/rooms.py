@@ -3,7 +3,9 @@ Room API routes.
 """
 import csv
 import io
+import re
 from typing import Annotated, List
+from urllib.parse import quote
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -144,55 +146,75 @@ async def export_room_csv(
     writer.writerow([
         'Storage Unit',
         'Unit Type',
+        'Compartment',
         'Item Name',
         'Unit Catalog Number',
         'Catalog Number',
         'Serial Number',
         'Owned By',
         'Quantity',
+        'Projects',
         'Description'
     ])
 
-    # Write data for each storage unit and its items
-    for unit in room.storage_units:
-        items = db.query(Item).filter(
+    def item_row(unit, compartment_name, item):
+        return [
+            unit.label,
+            unit.type.value if hasattr(unit.type, 'value') else unit.type,
+            compartment_name,
+            item.name,
+            item.unit_catalog_number or '',
+            item.catalog_number or '',
+            item.serial_number or '',
+            item.owned_by or '',
+            item.quantity,
+            ', '.join(item.projects or []),
+            item.description or ''
+        ]
+
+    # Write data for each storage unit and its items (including items that are
+    # inside the unit's compartments, which were previously left out)
+    for unit in sorted(room.storage_units, key=lambda u: u.label):
+        rows = []
+        direct_items = db.query(Item).filter(
             Item.storage_unit_id == unit.id,
             Item.status == ItemStatus.ACTIVE
         ).order_by(Item.name).all()
+        rows += [item_row(unit, '', item) for item in direct_items]
 
-        if items:
-            for item in items:
-                writer.writerow([
-                    unit.label,
-                    unit.type.value if hasattr(unit.type, 'value') else unit.type,
-                    item.name,
-                    item.unit_catalog_number or '',
-                    item.catalog_number or '',
-                    item.serial_number or '',
-                    item.owned_by or '',
-                    item.quantity,
-                    item.description or ''
-                ])
+        for comp in sorted(unit.compartments, key=lambda c: (c.index_order, c.name)):
+            comp_items = db.query(Item).filter(
+                Item.compartment_id == comp.id,
+                Item.status == ItemStatus.ACTIVE
+            ).order_by(Item.name).all()
+            rows += [item_row(unit, comp.name, item) for item in comp_items]
+
+        if rows:
+            writer.writerows(rows)
         else:
             # Write unit even if empty
             writer.writerow([
                 unit.label,
                 unit.type.value if hasattr(unit.type, 'value') else unit.type,
-                '(empty)',
-                '',
-                '',
-                '',
-                '',
-                '',
-                ''
+                '', '(empty)', '', '', '', '', '', '', ''
             ])
 
-    # Prepare response
-    output.seek(0)
+    # Prepare response.
+    # - A UTF-8 byte order mark makes Excel show Hebrew (and other non-Latin)
+    #   text correctly instead of garbled characters.
+    # - HTTP headers must be ASCII: a Hebrew room name in the plain filename
+    #   used to crash the export (HTTP 500). The real name is sent RFC 5987
+    #   encoded (filename*), with an ASCII fallback.
+    content = '﻿' + output.getvalue()
     filename = f"{room.name.replace(' ', '_')}_inventory.csv"
+    ascii_fallback = re.sub(r'[^A-Za-z0-9._-]', '', filename).strip('._') or 'room_inventory.csv'
+    disposition = (
+        f'attachment; filename="{ascii_fallback}"; '
+        f"filename*=UTF-8''{quote(filename)}"
+    )
 
     return StreamingResponse(
-        iter([output.getvalue()]),
-        media_type="text/csv",
-        headers={"Content-Disposition": f"attachment; filename={filename}"}
+        iter([content.encode('utf-8')]),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": disposition}
     )

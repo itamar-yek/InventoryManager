@@ -124,7 +124,7 @@ async def list_users(
     current_user: Annotated[User, Depends(require_role(UserRole.ADMIN))]
 ):
     """List all users with activity stats (admin only)."""
-    users = db.query(User).all()
+    users = db.query(User).order_by(User.created_at, User.username).all()
     now = datetime.now(timezone.utc)
     threshold = now - timedelta(minutes=ONLINE_THRESHOLD_MINUTES)
 

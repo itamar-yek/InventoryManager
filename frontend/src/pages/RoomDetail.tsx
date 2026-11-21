@@ -8,7 +8,7 @@ import { useParams, Link, useSearchParams } from 'react-router-dom';
 import { useInventoryStore } from '../stores/inventoryStore';
 import { useAuthStore } from '../stores/authStore';
 import { roomsApi } from '../services/api';
-import RoomCanvas from '../components/RoomCanvas';
+import RoomCanvas, { findFreeSpot } from '../components/RoomCanvas';
 import LoginPrompt from '../components/LoginPrompt';
 import type { StorageUnitCreate, StorageUnitType, StorageUnitUpdate, BlockCreate, ItemCreate, ItemUpdate, Item, DoorWall } from '../types';
 
@@ -174,7 +174,7 @@ function RoomDetail() {
       // Delete selected storage unit
       if (selectedUnitId && currentRoom) {
         const unit = currentRoom.storage_units.find(u => u.id === selectedUnitId);
-        if (unit && confirm(`Delete storage unit "${unit.label}"? Items in it will be orphaned.`)) {
+        if (unit && confirm(`Delete storage unit "${unit.label}"? (Only possible when it holds no items.)`)) {
           e.preventDefault();
           deleteUnit(selectedUnitId);
         }
@@ -215,14 +215,9 @@ function RoomDetail() {
           setTargetRoomUnits(currentRoom.storage_units.map(u => ({ id: u.id, label: u.label })));
         } else {
           // Fetch the target room to get its units
-          fetch(`/api/rooms/${moveTargetRoom}`, {
-            headers: {
-              'Authorization': `Bearer ${localStorage.getItem('access_token')}`
-            }
-          })
-            .then(res => res.json())
+          roomsApi.get(moveTargetRoom)
             .then(data => {
-              setTargetRoomUnits(data.storage_units?.map((u: { id: string; label: string }) => ({ id: u.id, label: u.label })) || []);
+              setTargetRoomUnits(data.storage_units?.map(u => ({ id: u.id, label: u.label })) || []);
             })
             .catch(() => setTargetRoomUnits([]));
         }
@@ -239,14 +234,9 @@ function RoomDetail() {
       if (currentRoom && batchMoveTargetRoom === currentRoom.id) {
         setBatchTargetRoomUnits(currentRoom.storage_units.map(u => ({ id: u.id, label: u.label })));
       } else {
-        fetch(`/api/rooms/${batchMoveTargetRoom}`, {
-          headers: {
-            'Authorization': `Bearer ${localStorage.getItem('access_token')}`
-          }
-        })
-          .then(res => res.json())
+        roomsApi.get(batchMoveTargetRoom)
           .then(data => {
-            setBatchTargetRoomUnits(data.storage_units?.map((u: { id: string; label: string }) => ({ id: u.id, label: u.label })) || []);
+            setBatchTargetRoomUnits(data.storage_units?.map(u => ({ id: u.id, label: u.label })) || []);
           })
           .catch(() => setBatchTargetRoomUnits([]));
       }
@@ -292,23 +282,13 @@ function RoomDetail() {
   const handleDoorMoveEnd = async (wall: DoorWall, position: number) => {
     if (!currentRoom) return;
     try {
-      const token = localStorage.getItem('access_token');
-      await fetch(`/api/rooms/${currentRoom.id}`, {
-        method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          door_wall: wall,
-          door_position: position
-        })
-      });
-      // Refresh room data after drag ends
-      fetchRoom(currentRoom.id);
+      await roomsApi.update(currentRoom.id, { door_wall: wall, door_position: position });
     } catch (err) {
       console.error('Failed to update door position:', err);
+      alert('Could not save the door position. Please try again.');
     }
+    // Refresh room data after drag ends (also restores the door if saving failed)
+    fetchRoom(currentRoom.id);
   };
 
   /**
@@ -317,23 +297,16 @@ function RoomDetail() {
   const handleAddDoor = async (wall: DoorWall) => {
     if (!currentRoom) return;
     try {
-      const token = localStorage.getItem('access_token');
-      await fetch(`/api/rooms/${currentRoom.id}`, {
-        method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          door_wall: wall,
-          door_position: 0.5, // Center of wall
-          door_width: 1
-        })
+      await roomsApi.update(currentRoom.id, {
+        door_wall: wall,
+        door_position: 0.5, // Center of wall
+        door_width: 1,
       });
-      fetchRoom(currentRoom.id);
     } catch (err) {
       console.error('Failed to add door:', err);
+      alert('Could not add the door. Please try again.');
     }
+    fetchRoom(currentRoom.id);
   };
 
   /**
@@ -342,23 +315,12 @@ function RoomDetail() {
   const handleRemoveDoor = async () => {
     if (!currentRoom) return;
     try {
-      const token = localStorage.getItem('access_token');
-      await fetch(`/api/rooms/${currentRoom.id}`, {
-        method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          door_wall: null,
-          door_position: null,
-          door_width: null
-        })
-      });
-      fetchRoom(currentRoom.id);
+      await roomsApi.update(currentRoom.id, { door_wall: null, door_position: null, door_width: null });
     } catch (err) {
       console.error('Failed to remove door:', err);
+      alert('Could not remove the door. Please try again.');
     }
+    fetchRoom(currentRoom.id);
   };
 
   /**
@@ -389,8 +351,11 @@ function RoomDetail() {
     e.preventDefault();
     if (!id) return;
 
+    const pos = getValidInitialPosition(newBlock.width || 1, newBlock.height || 1);
     await createBlock({
       ...newBlock,
+      x: pos.x,
+      y: pos.y,
       room_id: id,
     } as BlockCreate);
 
@@ -410,37 +375,15 @@ function RoomDetail() {
   /**
    * Calculate a valid initial position for a new unit inside the room
    */
-  const getValidInitialPosition = (unitWidth: number, unitHeight: number): { x: number; y: number } => {
+  const getValidInitialPosition = (width: number, height: number): { x: number; y: number } => {
     if (!currentRoom) return { x: 0, y: 0 };
-
-    const roomW = currentRoom.width || 10;
-    const roomH = currentRoom.height || 10;
-    const isLShape = currentRoom.shape === 'l_shape';
-    const cutoutW = currentRoom.shape_cutout_width || 0;
-    const cutoutH = currentRoom.shape_cutout_height || 0;
-    const corner = currentRoom.shape_cutout_corner;
-
-    // For L-shaped rooms, find a valid corner that's not in the cutout
-    if (isLShape && cutoutW && cutoutH && corner) {
-      // Try corners in order of preference, avoiding the cutout corner
-      const margin = 0.5; // Small margin from walls
-      const corners = [
-        { x: margin, y: margin, blocked: corner === 'top_left' },
-        { x: roomW - unitWidth - margin, y: margin, blocked: corner === 'top_right' },
-        { x: margin, y: roomH - unitHeight - margin, blocked: corner === 'bottom_left' },
-        { x: roomW - unitWidth - margin, y: roomH - unitHeight - margin, blocked: corner === 'bottom_right' },
-      ];
-
-      // Find first valid corner
-      for (const c of corners) {
-        if (!c.blocked && c.x >= 0 && c.y >= 0) {
-          return { x: c.x, y: c.y };
-        }
-      }
-    }
-
-    // Default: top-left corner with margin
-    return { x: 0.5, y: 0.5 };
+    // First free spot inside the room shape that doesn't overlap existing
+    // units or blocks (previously every new unit got the same position and
+    // new blocks were put at 0,0 - outside L-shaped rooms)
+    return findFreeSpot(width, height, currentRoom, [
+      ...currentRoom.storage_units,
+      ...(currentRoom.blocks || []),
+    ]);
   };
 
   /**
@@ -482,7 +425,7 @@ function RoomDetail() {
    */
   const handleDeleteUnit = async () => {
     if (!selectedUnitId || !selectedUnit) return;
-    if (confirm(`Are you sure you want to delete "${selectedUnit.label}"? All items in it will need to be moved first or they will be orphaned.`)) {
+    if (confirm(`Are you sure you want to delete "${selectedUnit.label}"? (Only possible when it holds no items - move or delete them first.)`)) {
       await deleteUnit(selectedUnitId);
     }
   };
@@ -884,23 +827,23 @@ function RoomDetail() {
                     />
                     <span className="text-gray-600">All</span>
                   </label>
-                  {selectedItemIds.size > 0 && (
-                    <>
-                      <span className="text-sm text-primary-700 font-medium ml-2">{selectedItemIds.size} selected</span>
-                      <button
-                        onClick={() => setShowBatchMoveModal(true)}
-                        className="text-xs btn-secondary py-1 px-2"
-                      >
-                        Move
-                      </button>
-                      <button
-                        onClick={handleBatchDelete}
-                        className="text-xs btn-secondary py-1 px-2 text-red-600"
-                      >
-                        Delete
-                      </button>
-                    </>
-                  )}
+                  {/* Always rendered (disabled when nothing is selected) so the
+                      list below doesn't jump when the first item is ticked */}
+                  <span className="text-sm text-primary-700 font-medium ml-2">{selectedItemIds.size} selected</span>
+                  <button
+                    onClick={() => setShowBatchMoveModal(true)}
+                    disabled={selectedItemIds.size === 0}
+                    className="text-xs btn-secondary py-1 px-2 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    Move
+                  </button>
+                  <button
+                    onClick={handleBatchDelete}
+                    disabled={selectedItemIds.size === 0}
+                    className="text-xs btn-secondary py-1 px-2 text-red-600 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    Delete
+                  </button>
                 </div>
               )}
               {items.length === 0 ? (
@@ -921,6 +864,9 @@ function RoomDetail() {
                         <div className="flex-1 flex justify-between items-start">
                           <div className="flex-1">
                             <p className="font-medium">{item.name}</p>
+                          {item.compartment_id && (
+                            <p className="text-xs text-amber-700">(in a drawer/compartment of this unit)</p>
+                          )}
                           {item.unit_catalog_number && (
                             <p className="text-gray-500 text-xs">
                               Unit Cat #: {item.unit_catalog_number}

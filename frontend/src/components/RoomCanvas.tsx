@@ -138,6 +138,60 @@ function rectanglesOverlap(
   );
 }
 
+/** Room geometry needed to place things inside it */
+export interface RoomGeometry {
+  width?: number | null;
+  height?: number | null;
+  shape?: RoomShape | null;
+  shape_cutout_width?: number | null;
+  shape_cutout_height?: number | null;
+  shape_cutout_corner?: CutoutCorner | null;
+}
+
+/** Anything already standing in the room */
+export interface PlacedElement {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rotation?: number;
+}
+
+/**
+ * Find a position for a new w x h element: the first spot (scanning from the
+ * top-left, 0.5 m steps, 0.5 m from the walls when possible) that is inside
+ * the room shape (L-shapes included) and does not overlap anything already
+ * there. Falls back to any inside position, then to (0.5, 0.5).
+ */
+export function findFreeSpot(
+  w: number,
+  h: number,
+  room: RoomGeometry,
+  existing: PlacedElement[]
+): { x: number; y: number } {
+  const roomW = room.width || 10;
+  const roomH = room.height || 10;
+  const shape = (room.shape || 'rectangle') as RoomShape;
+  const inside = (x: number, y: number) =>
+    isInsideRoom(x, y, w, h, roomW, roomH, shape, room.shape_cutout_width, room.shape_cutout_height, room.shape_cutout_corner);
+  const free = (x: number, y: number) =>
+    !existing.some(e => footprintsOverlap({ x, y, w, h }, footprint(e.x, e.y, e.width, e.height, e.rotation)));
+
+  const step = 0.5;
+  const candidates: { x: number; y: number }[] = [];
+  for (let y = 0.5; y + h <= roomH + 1e-9; y += step) {
+    for (let x = 0.5; x + w <= roomW + 1e-9; x += step) candidates.push({ x, y });
+  }
+  // Elements that need the full width/height can only start at 0
+  candidates.push({ x: 0, y: 0 });
+
+  return (
+    candidates.find(c => inside(c.x, c.y) && free(c.x, c.y)) ||
+    candidates.find(c => inside(c.x, c.y)) ||
+    { x: 0.5, y: 0.5 }
+  );
+}
+
 /**
  * Check if a rectangle is fully inside the room shape
  * Returns true if the rectangle is inside the valid room area
@@ -540,12 +594,15 @@ function RoomCanvas({
   const canvasHeight = 600;
   const roomWidth = width || 10;
   const roomHeight = height || 10;
-  const scaleX = canvasWidth / roomWidth;
+  // Space reserved on the right for the legend, so it never covers the room
+  const legendSpace = 130;
+  const drawWidth = canvasWidth - legendSpace;
+  const scaleX = drawWidth / roomWidth;
   const scaleY = canvasHeight / roomHeight;
   const scale = Math.min(scaleX, scaleY) * 0.85; // Leave margin for door swing
 
-  // Offset to center the room
-  const offsetX = (canvasWidth - roomWidth * scale) / 2;
+  // Offset to center the room in the area left of the legend
+  const offsetX = (drawWidth - roomWidth * scale) / 2;
   const offsetY = (canvasHeight - roomHeight * scale) / 2;
 
   /**

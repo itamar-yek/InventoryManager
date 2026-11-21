@@ -184,11 +184,22 @@ async def list_items(
     compartment_id: Optional[UUID] = None,
     status: ItemStatus = ItemStatus.ACTIVE
 ):
-    """List items, optionally filtered by location (requires editor role)."""
+    """List items, optionally filtered by location (requires editor role).
+
+    Filtering by storage_unit_id also returns items inside that unit's
+    compartments, so nothing stored in a unit is hidden from the room page.
+    """
     query = db.query(Item).filter(Item.status == status)
 
     if storage_unit_id:
-        query = query.filter(Item.storage_unit_id == storage_unit_id)
+        query = query.filter(
+            or_(
+                Item.storage_unit_id == storage_unit_id,
+                Item.compartment_id.in_(
+                    db.query(Compartment.id).filter(Compartment.storage_unit_id == storage_unit_id)
+                ),
+            )
+        )
     if compartment_id:
         query = query.filter(Item.compartment_id == compartment_id)
 

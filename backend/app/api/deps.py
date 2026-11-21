@@ -3,7 +3,7 @@ API dependencies for authentication and authorization.
 """
 from typing import Annotated, Optional
 from uuid import UUID
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from sqlalchemy.orm import Session
@@ -73,9 +73,20 @@ async def get_current_active_user(
     return current_user
 
 
+EDIT_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+
+
 def require_role(required_role: UserRole):
-    """Dependency factory that requires a minimum role level."""
+    """Dependency factory that requires a minimum role level.
+
+    Also counts inventory edits for the admin dashboard ("Edits" column and
+    "Top Contributors"): every POST/PUT/PATCH/DELETE on an inventory endpoint
+    increments the user's edit_count. The increment is saved by the endpoint's
+    own commit, so requests that fail (and are not committed) are not counted.
+    User-management requests under /api/auth are not counted.
+    """
     async def role_checker(
+        request: Request,
         current_user: Annotated[User, Depends(get_current_user)]
     ) -> User:
         if not current_user.has_permission(required_role):
@@ -83,6 +94,8 @@ def require_role(required_role: UserRole):
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Requires {required_role.value} role or higher"
             )
+        if request.method in EDIT_METHODS and not request.url.path.startswith("/api/auth"):
+            current_user.edit_count = (current_user.edit_count or 0) + 1
         return current_user
     return role_checker
 

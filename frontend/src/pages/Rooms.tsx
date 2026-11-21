@@ -67,7 +67,7 @@ function Rooms() {
    * Handle room deletion
    */
   const handleDelete = async (id: string, name: string) => {
-    if (confirm(`Are you sure you want to delete "${name}"? This will delete all storage units and items in this room.`)) {
+    if (confirm(`Are you sure you want to delete "${name}" and all its storage units and blocks? (Only possible when the room holds no items - move or delete them first.)`)) {
       await deleteRoom(id);
     }
   };

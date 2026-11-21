@@ -7,7 +7,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { User, UserRole, LoginCredentials } from '../types';
-import { authApi } from '../services/api';
+import { authApi, apiErrorMessage } from '../services/api';
 
 interface RegisterData {
   username: string;
@@ -34,6 +34,8 @@ interface AuthState {
   logout: () => void;
   /** Fetch current user info */
   fetchUser: () => Promise<void>;
+  /** Re-check the saved login in the background (picks up role changes) */
+  refreshUser: () => Promise<void>;
   /** Check if user has required role */
   hasRole: (role: UserRole) => boolean;
   /** Check if user can edit (editor or admin) */
@@ -78,8 +80,9 @@ export const useAuthStore = create<AuthState>()(
           set({ user, isLoading: false });
           return true;
         } catch (error: unknown) {
-          const message = error instanceof Error ? error.message : 'Login failed';
-          set({ error: message, isLoading: false });
+          // Show the server's reason (e.g. "Incorrect username or password",
+          // "User account is disabled") instead of "Request failed with status code 401"
+          set({ error: apiErrorMessage(error, 'Login failed'), isLoading: false });
           return false;
         }
       },
@@ -97,12 +100,7 @@ export const useAuthStore = create<AuthState>()(
           set({ user, isLoading: false });
           return true;
         } catch (error: unknown) {
-          let message = 'Registration failed';
-          if (error && typeof error === 'object' && 'response' in error) {
-            const axiosError = error as { response?: { data?: { detail?: string } } };
-            message = axiosError.response?.data?.detail || message;
-          }
-          set({ error: message, isLoading: false });
+          set({ error: apiErrorMessage(error, 'Registration failed'), isLoading: false });
           return false;
         }
       },
@@ -127,6 +125,19 @@ export const useAuthStore = create<AuthState>()(
           // Token invalid, clear state
           localStorage.removeItem('access_token');
           set({ user: null, token: null, isLoading: false });
+        }
+      },
+
+      refreshUser: async () => {
+        // Re-check the saved login in the background (no loading spinner).
+        // Picks up role changes; an expired login is handled by the API
+        // interceptor, which signs the user out.
+        if (!localStorage.getItem('access_token')) return;
+        try {
+          const user = await authApi.getCurrentUser();
+          set({ user });
+        } catch {
+          // handled by the interceptor (401) or ignored (network error)
         }
       },
 

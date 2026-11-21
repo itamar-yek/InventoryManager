@@ -64,18 +64,50 @@ api.interceptors.request.use((config) => {
 });
 
 /**
- * Response interceptor - handles auth errors
- * Note: We don't auto-redirect on 401 to avoid race conditions.
- * The ProtectedRoute component handles redirects for unauthenticated users.
+ * Response interceptor - handles expired / invalid logins.
+ *
+ * Login tokens expire (ACCESS_TOKEN_EXPIRE_MINUTES, default 30). Previously the
+ * app kept showing the user as signed in while every request failed with 401,
+ * so pages showed "Room not found" and edits were silently lost. Now any 401
+ * on a request that carried a token signs the user out and sends them to the
+ * login page, which returns them to the same page afterwards.
  */
+let redirectingToLogin = false;
+
+export function handleExpiredSession(): void {
+  if (redirectingToLogin) return;
+  redirectingToLogin = true;
+  localStorage.removeItem('access_token');
+  localStorage.removeItem('auth-storage');
+  const next = window.location.pathname + window.location.search;
+  window.location.assign(`/login?expired=1&next=${encodeURIComponent(next)}`);
+}
+
 api.interceptors.response.use(
   (response) => response,
   (error: AxiosError<ApiError>) => {
-    // Just reject the error, let the calling code handle it
-    // The ProtectedRoute and auth store will handle redirects appropriately
+    const isLoginRequest = error.config?.url?.includes('/auth/login');
+    const sentToken = Boolean(error.config?.headers?.Authorization);
+    if (error.response?.status === 401 && sentToken && !isLoginRequest) {
+      handleExpiredSession();
+    }
     return Promise.reject(error);
   }
 );
+
+/**
+ * Turn an API error into a message for the user (the server's "detail" when
+ * available, instead of e.g. "Request failed with status code 401").
+ */
+export function apiErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof AxiosError) {
+    const detail = error.response?.data?.detail as unknown;
+    if (typeof detail === 'string') return detail;
+    if (Array.isArray(detail) && detail[0]?.msg) return String(detail[0].msg);
+    if (!error.response) return 'Cannot reach the server. Check that the application is running.';
+  }
+  return fallback;
+}
 
 // =============================================================================
 // Authentication API

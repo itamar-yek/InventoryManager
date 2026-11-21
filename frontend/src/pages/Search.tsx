@@ -8,6 +8,7 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useInventoryStore } from '../stores/inventoryStore';
 import { useAuthStore } from '../stores/authStore';
+import { roomsApi } from '../services/api';
 
 /**
  * Search page with results
@@ -33,14 +34,9 @@ function Search() {
   // Update target room units when room selection changes
   useEffect(() => {
     if (batchMoveTargetRoom) {
-      fetch(`/api/rooms/${batchMoveTargetRoom}`, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('access_token')}`
-        }
-      })
-        .then(res => res.json())
+      roomsApi.get(batchMoveTargetRoom)
         .then(data => {
-          setBatchTargetRoomUnits(data.storage_units?.map((u: { id: string; label: string }) => ({ id: u.id, label: u.label })) || []);
+          setBatchTargetRoomUnits(data.storage_units?.map(u => ({ id: u.id, label: u.label })) || []);
         })
         .catch(() => setBatchTargetRoomUnits([]));
     } else {
@@ -203,26 +199,31 @@ function Search() {
           ) : (
             <>
               {/* Selection action bar */}
-              {canEdit() && selectedItemIds.size > 0 && (
+              {/* Always shown with results (buttons disabled until something is
+                  selected) so the table doesn't jump when the first box is ticked */}
+              {canEdit() && searchResults.length > 0 && (
                 <div className="mb-4 p-3 bg-primary-50 rounded-lg flex items-center gap-3 flex-wrap">
                   <span className="text-sm font-medium text-primary-700">
-                    {selectedItemIds.size} item(s) selected
+                    {selectedItemIds.size > 0 ? `${selectedItemIds.size} item(s) selected` : 'Tick items to move or delete them'}
                   </span>
                   <button
                     onClick={() => setShowBatchMoveModal(true)}
-                    className="btn-secondary text-sm"
+                    disabled={selectedItemIds.size === 0}
+                    className="btn-secondary text-sm disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     Move Selected
                   </button>
                   <button
                     onClick={handleBatchDelete}
-                    className="btn-secondary text-sm text-red-600"
+                    disabled={selectedItemIds.size === 0}
+                    className="btn-secondary text-sm text-red-600 disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     Delete Selected
                   </button>
                   <button
                     onClick={clearSelection}
-                    className="text-sm text-gray-500 hover:text-gray-700 ml-auto"
+                    disabled={selectedItemIds.size === 0}
+                    className="text-sm text-gray-500 hover:text-gray-700 ml-auto disabled:opacity-40"
                   >
                     Clear Selection
                   </button>

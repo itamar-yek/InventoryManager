@@ -26,8 +26,12 @@ function Login() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [localError, setLocalError] = useState('');
 
-  // Get redirect path from location state
-  const from = (location.state as { from?: { pathname: string } })?.from?.pathname || '/';
+  // Get redirect path from location state, or from ?next= (set when an
+  // expired login sent the user here). Only same-site paths are accepted.
+  const nextParam = searchParams.get('next');
+  const safeNext = nextParam && nextParam.startsWith('/') && !nextParam.startsWith('//') ? nextParam : null;
+  const from = (location.state as { from?: { pathname: string } })?.from?.pathname || safeNext || '/';
+  const sessionExpired = searchParams.get('expired') === '1';
 
   // Redirect if already authenticated
   useEffect(() => {
@@ -93,6 +97,13 @@ function Login() {
               {isRegisterMode ? 'Create a new account' : 'Sign in to your account'}
             </p>
           </div>
+
+          {/* Expired login notice */}
+          {sessionExpired && !displayError && (
+            <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-md text-yellow-800 text-sm">
+              Your session has expired. Please sign in again.
+            </div>
+          )}
 
           {/* Error message */}
           {displayError && (

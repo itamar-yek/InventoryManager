@@ -229,7 +229,8 @@ def main():
     s, r = api.call("POST", f"/storage-units/{u2['id']}/move-all-items", body={"to_storage_unit_id": u1["id"]})
     check("move all items from unit", s == 200 and r["moved_count"] == 2, r)
     s, lst = api.call("GET", f"/items?storage_unit_id={u1['id']}")
-    check("list items by unit", s == 200 and len(lst) == 2, lst)
+    # 2 items placed directly in the unit + 1 inside its compartment
+    check("list items by unit (incl. compartment items)", s == 200 and len(lst) == 3, lst)
 
     s, csv_text = api.call("GET", f"/rooms/{room['id']}/export", raw=True)
     check("CSV export", s == 200 and "Oscilloscope" in csv_text, csv_text[:200])

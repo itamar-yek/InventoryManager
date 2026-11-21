@@ -42,7 +42,7 @@ function Dashboard() {
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold text-gray-900">
-          Welcome, {user?.username}
+          {user ? `Welcome, ${user.username}` : 'Welcome'}
         </h1>
         <p className="text-gray-600">
           Here's an overview of your inventory
@@ -65,7 +65,7 @@ function Dashboard() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-gray-600">Your Role</p>
-              <p className="text-2xl font-bold capitalize">{user?.role}</p>
+              <p className="text-2xl font-bold capitalize">{user?.role || 'Guest'}</p>
             </div>
             <span className="text-4xl">👤</span>
           </div>

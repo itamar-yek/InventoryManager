@@ -23,7 +23,7 @@ import AdminDashboard from './pages/AdminDashboard';
  * Main App with routing configuration
  */
 function App() {
-  const { fetchUser, token, user, isLoading } = useAuthStore();
+  const { fetchUser, refreshUser, token, user, isLoading } = useAuthStore();
 
   // Fetch user on mount if token exists but user is not loaded
   useEffect(() => {
@@ -31,6 +31,15 @@ function App() {
       fetchUser();
     }
   }, [token, user, fetchUser]);
+
+  // On app start, re-validate a saved login (expired logins are signed out,
+  // role changes made by an admin are picked up)
+  useEffect(() => {
+    if (token && user) {
+      refreshUser();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Show loading while fetching user on initial load
   if (token && !user && isLoading) {

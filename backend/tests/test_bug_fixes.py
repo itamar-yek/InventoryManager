@@ -81,6 +81,56 @@ def test_delete_unit_with_only_deleted_items_in_compartment_succeeds(client, aut
     assert r.status_code == 204, r.text
 
 
+def test_csv_export_hebrew_room_name_and_compartment_items(client, auth_headers):
+    """Hebrew room names used to crash the export (non-ASCII header -> 500);
+    items in compartments and projects were missing; no BOM for Excel."""
+    room = client.post("/api/rooms/", json={"name": "מעבדה ראשית"}, headers=auth_headers).json()
+    unit = client.post("/api/storage-units/", headers=auth_headers, json={
+        "room_id": room["id"], "label": "ארון 1", "type": "cabinet"}).json()
+    comp = client.post("/api/compartments/", headers=auth_headers, json={
+        "storage_unit_id": unit["id"], "name": "מגירה"}).json()
+    client.post("/api/items/", headers=auth_headers, json={
+        "name": "מולטימטר", "storage_unit_id": unit["id"], "projects": ["פרויקט א", "B"]})
+    client.post("/api/items/", headers=auth_headers, json={
+        "name": "נגדים", "compartment_id": comp["id"]})
+
+    r = client.get(f"/api/rooms/{room['id']}/export", headers=auth_headers)
+    assert r.status_code == 200, r.text
+    assert r.content.startswith(b"\xef\xbb\xbf")  # UTF-8 BOM for Excel
+    assert "filename*=UTF-8''" in r.headers["content-disposition"]
+    text = r.content.decode("utf-8-sig")
+    assert "מולטימטר" in text and "פרויקט א, B" in text
+    assert "מגירה" in text and "נגדים" in text  # compartment item included
+
+
+def test_list_items_by_unit_includes_compartment_items(client, auth_headers):
+    _, unit_a, _, comp = _setup(client, auth_headers)
+    client.post("/api/items/", headers=auth_headers, json={"name": "Direct", "storage_unit_id": unit_a["id"]})
+    client.post("/api/items/", headers=auth_headers, json={"name": "In drawer", "compartment_id": comp["id"]})
+
+    names = {i["name"] for i in client.get(
+        f"/api/items/?storage_unit_id={unit_a['id']}", headers=auth_headers).json()}
+    assert names == {"Direct", "In drawer"}
+
+
+def test_edit_count_increments_only_for_successful_inventory_edits(client, auth_headers, db, admin_user):
+    from app.models.user import User
+
+    def count():
+        db.expire_all()
+        return db.query(User).filter(User.id == admin_user.id).one().edit_count
+
+    room = client.post("/api/rooms/", json={"name": "Counted"}, headers=auth_headers).json()
+    assert count() == 1
+    client.put(f"/api/rooms/{room['id']}", json={"notes": "x"}, headers=auth_headers)
+    assert count() == 2
+    client.get(f"/api/rooms/{room['id']}", headers=auth_headers)          # reads don't count
+    client.post("/api/items/", json={"name": "no location"}, headers=auth_headers)  # 400, not counted
+    assert count() == 2
+    stats = client.get("/api/auth/stats", headers=auth_headers).json()
+    assert stats["top_editors"][0] == {"username": "admin", "edit_count": 2}
+
+
 def test_delete_empty_compartment_succeeds(client, auth_headers):
     _, _, _, comp = _setup(client, auth_headers)
     assert client.delete(f"/api/compartments/{comp['id']}", headers=auth_headers).status_code == 204

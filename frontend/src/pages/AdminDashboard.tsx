@@ -4,7 +4,8 @@
  * Shows system statistics and user management for admins.
  */
 import { useEffect, useState } from 'react';
-import { authApi } from '../services/api';
+import { authApi, apiErrorMessage } from '../services/api';
+import { useAuthStore } from '../stores/authStore';
 
 interface UserWithStats {
   id: string;
@@ -32,6 +33,7 @@ function AdminDashboard() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const currentUserId = useAuthStore((s) => s.user?.id);
 
   // Fetch data on mount
   useEffect(() => {
@@ -60,20 +62,24 @@ function AdminDashboard() {
   // Update user role
   const handleRoleChange = async (userId: string, newRole: string) => {
     try {
+      setError(null);
       await authApi.updateUser(userId, { role: newRole });
       setUsers(users.map(u => u.id === userId ? { ...u, role: newRole as 'viewer' | 'editor' | 'admin' } : u));
     } catch (err) {
       console.error('Failed to update role:', err);
+      setError(apiErrorMessage(err, 'Failed to change the role. Please try again.'));
     }
   };
 
   // Toggle user active status
   const handleToggleActive = async (userId: string, isActive: boolean) => {
     try {
+      setError(null);
       await authApi.updateUser(userId, { is_active: !isActive });
       setUsers(users.map(u => u.id === userId ? { ...u, is_active: !isActive } : u));
     } catch (err) {
       console.error('Failed to toggle user status:', err);
+      setError(apiErrorMessage(err, 'Failed to change the account status. Please try again.'));
     }
   };
 
@@ -181,7 +187,8 @@ function AdminDashboard() {
                       value={user.role}
                       onChange={(e) => handleRoleChange(user.id, e.target.value)}
                       className="input py-1 px-2 text-sm w-24"
-                      disabled={user.role === 'admin'}
+                      disabled={user.id === currentUserId}
+                      title={user.id === currentUserId ? 'You cannot change your own role' : undefined}
                     >
                       <option value="viewer">Viewer</option>
                       <option value="editor">Editor</option>
@@ -199,7 +206,7 @@ function AdminDashboard() {
                     </span>
                   </td>
                   <td className="py-3">
-                    {user.role !== 'admin' && (
+                    {user.id !== currentUserId && (
                       <button
                         onClick={() => handleToggleActive(user.id, user.is_active)}
                         className={`text-sm ${
