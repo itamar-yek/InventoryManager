@@ -5,9 +5,11 @@ from typing import Annotated, List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.models.compartment import Compartment
 from app.models.storage_unit import StorageUnit
 from app.models.room import Room
 from app.models.item import Item, ItemStatus
@@ -109,10 +111,17 @@ async def delete_storage_unit(
             detail="Storage unit not found"
         )
 
-    # Check if there are ACTIVE items in this unit (ignore soft-deleted)
+    # Check if there are ACTIVE items in this unit or in any of its compartments
+    # (ignore soft-deleted). Items in compartments used to be missed, which made
+    # the delete crash with a database constraint error (HTTP 500).
     item_count = db.query(Item).filter(
-        Item.storage_unit_id == unit_id,
-        Item.status == ItemStatus.ACTIVE
+        Item.status == ItemStatus.ACTIVE,
+        or_(
+            Item.storage_unit_id == unit_id,
+            Item.compartment_id.in_(
+                db.query(Compartment.id).filter(Compartment.storage_unit_id == unit_id)
+            ),
+        ),
     ).count()
     if item_count > 0:
         raise HTTPException(

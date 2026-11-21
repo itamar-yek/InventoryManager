@@ -60,6 +60,27 @@ def test_delete_compartment_with_items_returns_400_not_500(client, auth_headers)
     assert client.get(f"/api/compartments/{comp['id']}", headers=auth_headers).status_code == 200
 
 
+def test_delete_unit_with_items_in_compartment_returns_400_not_500(client, auth_headers):
+    """Items inside a unit's compartments used to be ignored -> crash (500)."""
+    _, unit_a, _, comp = _setup(client, auth_headers)
+    client.post("/api/items/", headers=auth_headers, json={"name": "In drawer", "compartment_id": comp["id"]})
+
+    r = client.delete(f"/api/storage-units/{unit_a['id']}", headers=auth_headers)
+    assert r.status_code == 400
+    assert "1 item" in r.json()["detail"]
+    assert client.get(f"/api/storage-units/{unit_a['id']}", headers=auth_headers).status_code == 200
+
+
+def test_delete_unit_with_only_deleted_items_in_compartment_succeeds(client, auth_headers):
+    _, unit_a, _, comp = _setup(client, auth_headers)
+    item = client.post("/api/items/", headers=auth_headers, json={
+        "name": "Gone", "compartment_id": comp["id"]}).json()
+    client.delete(f"/api/items/{item['id']}", headers=auth_headers)
+
+    r = client.delete(f"/api/storage-units/{unit_a['id']}", headers=auth_headers)
+    assert r.status_code == 204, r.text
+
+
 def test_delete_empty_compartment_succeeds(client, auth_headers):
     _, _, _, comp = _setup(client, auth_headers)
     assert client.delete(f"/api/compartments/{comp['id']}", headers=auth_headers).status_code == 204
