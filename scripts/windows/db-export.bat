@@ -24,9 +24,9 @@ if "%1"=="--data-only" (
 echo Exporting database to %OUTFILE%...
 
 if "%DATA_ONLY%"=="" (
-    docker-compose exec -T db pg_dump -U postgres inventory > %OUTFILE%
+    docker exec inventory-db sh -c "pg_dump -U $POSTGRES_USER -d $POSTGRES_DB" > %OUTFILE%
 ) else (
-    docker-compose exec -T db pg_dump -U postgres --data-only inventory > %OUTFILE%
+    docker exec inventory-db sh -c "pg_dump -U $POSTGRES_USER -d $POSTGRES_DB --data-only" > %OUTFILE%
 )
 
 if %ERRORLEVEL% EQU 0 (

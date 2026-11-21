@@ -51,11 +51,13 @@ if not exist .env (
         copy .env.example .env >nul
         echo       Created .env from template.
         echo.
-        echo *** IMPORTANT: Edit .env file to set secure passwords! ***
+        echo *** IMPORTANT: set POSTGRES_PASSWORD and SECRET_KEY in .env NOW, ***
+        echo *** BEFORE the first start. The database password cannot simply  ***
+        echo *** be changed in .env later.                                     ***
         echo.
-        echo       Run: notepad .env
+        echo       Run: notepad .env     then run setup.bat again.
         echo.
-        set NEEDS_CONFIG=1
+        exit /b 1
     ) else (
         echo       WARNING: No .env.example found. Creating minimal .env...
         (
@@ -79,10 +81,7 @@ if not exist .env (
 
 REM Build Docker images
 echo [5/7] Building Docker images (this may take several minutes)...
-REM Disable BuildKit to avoid "unable to initialize frontend" errors
-set DOCKER_BUILDKIT=0
-set COMPOSE_DOCKER_CLI_BUILD=0
-docker-compose build --no-cache
+docker-compose build --pull
 if %ERRORLEVEL% NEQ 0 (
     echo.
     echo ERROR: Failed to build Docker images!
@@ -117,24 +116,13 @@ echo ==========================================
 echo.
 echo The application is now running:
 echo.
-echo   Frontend: http://localhost:3000
-echo   Backend:  http://localhost:8000
-echo   API Docs: http://localhost:8000/docs
+echo   Application: http://localhost
+echo   API Docs:    http://localhost/api/docs
 echo.
 
-if defined NEEDS_CONFIG (
-    echo *** IMPORTANT ***
-    echo Before using in production:
-    echo   1. Edit .env file: notepad .env
-    echo   2. Change POSTGRES_PASSWORD to a secure password
-    echo   3. Change SECRET_KEY to a random string
-    echo   4. Restart: scripts\windows\restart.bat
-    echo.
-)
-
 echo Next steps:
-echo   1. Open http://localhost:3000 in your browser
-echo   2. Register the first user (becomes admin)
+echo   1. Open http://localhost in your browser
+echo   2. Log in as "admin" (password: ADMIN_PASSWORD from .env, default "admin")
 echo   3. Start adding rooms and inventory!
 echo.
 echo Run 'scripts\windows\health-check.bat' to verify all services.

@@ -28,7 +28,7 @@ if %ERRORLEVEL% EQU 0 (
 
 REM Check Database
 echo [2/4] Database...
-docker-compose exec -T db pg_isready -U postgres >nul 2>&1
+docker exec inventory-db pg_isready -q >nul 2>&1
 if %ERRORLEVEL% EQU 0 (
     echo       OK - PostgreSQL is accepting connections
 ) else (
@@ -38,7 +38,7 @@ if %ERRORLEVEL% EQU 0 (
 
 REM Check Backend
 echo [3/4] Backend API...
-curl -s -f http://localhost:8000/health >nul 2>&1
+curl -s -f http://localhost/api/health >nul 2>&1
 if %ERRORLEVEL% EQU 0 (
     echo       OK - Backend is healthy
 ) else (
@@ -48,7 +48,7 @@ if %ERRORLEVEL% EQU 0 (
 
 REM Check Frontend
 echo [4/4] Frontend...
-curl -s -f http://localhost:3000 >nul 2>&1
+curl -s -f http://localhost/health >nul 2>&1
 if %ERRORLEVEL% EQU 0 (
     echo       OK - Frontend is serving
 ) else (

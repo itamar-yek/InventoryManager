@@ -8,9 +8,11 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.models.compartment import Compartment
 from app.models.room import Room
 from app.models.item import Item, ItemStatus
 from app.models.user import User, UserRole
@@ -95,6 +97,26 @@ async def delete_room(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Room not found"
         )
+
+    # Refuse to delete a room that still holds active items (directly in a
+    # storage unit or inside one of its compartments). Previously this crashed
+    # with a database constraint error (HTTP 500).
+    unit_ids = [unit.id for unit in room.storage_units]
+    if unit_ids:
+        item_count = db.query(Item).filter(
+            Item.status == ItemStatus.ACTIVE,
+            or_(
+                Item.storage_unit_id.in_(unit_ids),
+                Item.compartment_id.in_(
+                    db.query(Compartment.id).filter(Compartment.storage_unit_id.in_(unit_ids))
+                ),
+            ),
+        ).count()
+        if item_count > 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Cannot delete room with {item_count} item(s). Move or delete items first."
+            )
 
     db.delete(room)
     db.commit()

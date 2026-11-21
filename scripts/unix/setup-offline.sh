@@ -41,13 +41,13 @@ if ! docker image inspect postgres:15-alpine &> /dev/null; then
     echo "Please run import-images.sh first."
     exit 1
 fi
-if ! docker image inspect inventorymanager-main-backend &> /dev/null; then
+if ! docker image inspect inventory-manager-backend:latest &> /dev/null; then
     echo ""
     echo "ERROR: Backend image not found!"
     echo "Please run import-images.sh first."
     exit 1
 fi
-if ! docker image inspect inventorymanager-main-frontend &> /dev/null; then
+if ! docker image inspect inventory-manager-frontend:latest &> /dev/null; then
     echo ""
     echo "ERROR: Frontend image not found!"
     echo "Please run import-images.sh first."

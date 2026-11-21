@@ -7,7 +7,10 @@
 # -----------------------------------------------------------------------------
 # Stage 1: Build stage - install dependencies
 # -----------------------------------------------------------------------------
-FROM python:3.11-slim as builder
+# Pinned to Debian 12 (bookworm): its postgresql-client is version 15, matching
+# the postgres:15 database, so backups made by the backend can be restored by
+# the database container.
+FROM python:3.11-slim-bookworm AS builder
 
 # Prevent Python from writing .pyc files and buffering stdout/stderr
 ENV PYTHONDONTWRITEBYTECODE=1
@@ -31,7 +34,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # -----------------------------------------------------------------------------
 # Stage 2: Production stage - minimal runtime image
 # -----------------------------------------------------------------------------
-FROM python:3.11-slim
+FROM python:3.11-slim-bookworm
 
 # Environment variables
 ENV PYTHONDONTWRITEBYTECODE=1
@@ -41,7 +44,7 @@ ENV APP_HOME=/app
 
 # Install runtime dependencies only
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends libpq5 curl && \
+    apt-get install -y --no-install-recommends libpq5 curl postgresql-client && \
     rm -rf /var/lib/apt/lists/* && \
     apt-get clean
 
@@ -57,9 +60,9 @@ COPY --from=builder /opt/venv /opt/venv
 # Copy application code
 COPY --chown=appuser:appgroup . .
 
-# Create directories for uploads and logs
-RUN mkdir -p /app/uploads /app/logs && \
-    chown -R appuser:appgroup /app/uploads /app/logs
+# Create directories for uploads, logs and automatic pre-migration backups
+RUN mkdir -p /app/uploads /app/logs /app/backups && \
+    chown -R appuser:appgroup /app/uploads /app/logs /app/backups
 
 # Switch to non-root user
 USER appuser

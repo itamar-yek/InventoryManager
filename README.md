@@ -11,6 +11,12 @@ A room-based inventory management system with visual layouts, designed for offli
 - **Role-Based Access Control**: Viewer, Editor, and Admin roles
 - **Offline-Ready**: No external dependencies at runtime
 
+## Documentation
+
+- **[OFFLINE_INSTALL.md](OFFLINE_INSTALL.md)**: install on an offline Windows computer, back up, update
+- **[DATABASE_CHANGES.md](DATABASE_CHANGES.md)**: how to change the database structure without losing data
+- [DEPLOYMENT.md](DEPLOYMENT.md): general deployment and operations
+
 ## Quick Start
 
 ### Prerequisites

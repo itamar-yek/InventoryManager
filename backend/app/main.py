@@ -16,15 +16,19 @@ API Documentation:
 - ReDoc: /redoc
 - OpenAPI JSON: /openapi.json
 """
+import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
-from app.database import create_tables, get_session_local, run_migrations
+from app.database import get_session_local
+from app.schema_manager import prepare_database
 from app.api import api_router
 
 settings = get_settings()
+
+logging.basicConfig(level=logging.INFO, format="%(levelname)s:     %(name)s - %(message)s")
 
 
 def create_default_admin():
@@ -38,15 +42,15 @@ def create_default_admin():
         user_count = db.query(User).count()
         if user_count == 0:
             admin = User(
-                username="admin",
+                username=settings.admin_username,
                 email="admin@example.com",
-                password_hash=get_password_hash("admin"),
+                password_hash=get_password_hash(settings.admin_password),
                 role=UserRole.ADMIN,
                 is_active=True
             )
             db.add(admin)
             db.commit()
-            print("Default admin user created (username: admin, password: admin)")
+            print(f"Default admin user created (username: {settings.admin_username})")
     finally:
         db.close()
 
@@ -54,10 +58,9 @@ def create_default_admin():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan events."""
-    # Startup: run migrations first (for existing databases)
-    run_migrations()
-    # Create database tables
-    create_tables()
+    # Startup: bring the database schema up to date (Alembic migrations,
+    # with an automatic backup before any change to an existing database).
+    prepare_database()
     # Create default admin user
     create_default_admin()
     yield

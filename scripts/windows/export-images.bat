@@ -1,19 +1,19 @@
 @echo off
+setlocal
 REM =============================================================================
 REM Export Docker Images - Inventory Manager (Windows)
 REM =============================================================================
-REM Run this script on a machine WITH internet access to create an offline
-REM deployment package. This will:
-REM   1. Build the frontend (requires Node.js)
-REM   2. Build Docker images
-REM   3. Export images to .tar files
+REM Run this on a machine WITH internet access to create the offline package.
+REM It builds everything inside Docker - Node.js and Python are NOT needed.
 REM
-REM The entire project folder can then be copied to an offline machine.
+REM   1. Downloads the base images (PostgreSQL, Python, Node, Nginx)
+REM   2. Builds the backend and frontend images from this source code
+REM   3. Saves the 3 images the application needs to docker-images\*.tar
 REM
-REM Prerequisites:
-REM   1. Node.js installed (version 18+)
-REM   2. Docker Desktop installed and running
-REM   3. Internet connectivity
+REM Afterwards copy the WHOLE project folder (including docker-images\) to the
+REM offline machine and follow OFFLINE_INSTALL.md.
+REM
+REM Prerequisites: Docker Desktop installed and running, internet access.
 REM
 REM Usage:
 REM   export-images.bat
@@ -25,102 +25,54 @@ echo   Export for Offline Deployment
 echo ==========================================
 echo.
 
-REM Check if Node.js is installed
-node --version >nul 2>&1
-if %ERRORLEVEL% NEQ 0 (
-    echo ERROR: Node.js is not installed!
-    echo Please install Node.js from https://nodejs.org/
-    exit /b 1
-)
-
-REM Check if Docker is running
 docker info >nul 2>&1
-if %ERRORLEVEL% NEQ 0 (
+if errorlevel 1 (
     echo ERROR: Docker is not running!
     echo Please start Docker Desktop and try again.
     exit /b 1
 )
 
-REM Create docker-images directory
 if not exist docker-images mkdir docker-images
 
-echo [1/6] Building frontend...
-cd frontend
-call npm ci
-if %ERRORLEVEL% NEQ 0 (
-    echo ERROR: npm install failed!
-    cd ..
-    exit /b 1
-)
-call npm run build
-if %ERRORLEVEL% NEQ 0 (
-    echo ERROR: Frontend build failed!
-    cd ..
-    exit /b 1
-)
-cd ..
-echo       Frontend built successfully.
-
-echo.
-echo [2/6] Pulling base images...
+echo [1/3] Downloading base images...
 docker pull postgres:15-alpine
-docker pull nginx:alpine
-docker pull python:3.11-slim
+if errorlevel 1 goto FAILED
 
 echo.
-echo [3/6] Building application images...
-set DOCKER_BUILDKIT=0
-set COMPOSE_DOCKER_CLI_BUILD=0
-docker-compose build
+echo [2/3] Building application images (this can take several minutes)...
+docker compose build --pull
+if errorlevel 1 goto FAILED
 
 echo.
-echo [4/6] Exporting images to tar files...
-echo       This may take several minutes...
-
-REM Export all required images
+echo [3/3] Saving images to docker-images\ ...
 docker save -o docker-images\postgres.tar postgres:15-alpine
-echo       - postgres:15-alpine exported
+if errorlevel 1 goto FAILED
+echo       - postgres.tar
+docker save -o docker-images\inventory-backend.tar inventory-manager-backend:latest
+if errorlevel 1 goto FAILED
+echo       - inventory-backend.tar
+docker save -o docker-images\inventory-frontend.tar inventory-manager-frontend:latest
+if errorlevel 1 goto FAILED
+echo       - inventory-frontend.tar
 
-docker save -o docker-images\inventory-backend.tar inventorymanager-main-backend
-echo       - inventory-backend exported
-
-docker save -o docker-images\inventory-frontend.tar inventorymanager-main-frontend
-echo       - inventory-frontend exported
-
-echo.
-echo [5/6] Verifying frontend dist is included...
-if not exist frontend\dist\index.html (
-    echo ERROR: Frontend dist folder not found!
-    exit /b 1
-)
-echo       Frontend dist verified.
-
-echo.
-echo [6/6] Creating offline package info...
+for /f "delims=" %%i in ('powershell -NoProfile -Command "Get-Date -Format 'yyyy-MM-dd HH:mm'"') do set TS=%%i
 (
 echo Inventory Manager - Offline Deployment Package
 echo ===============================================
+echo Created: %TS%
 echo.
-echo Created on: %DATE% %TIME%
+echo docker-images\postgres.tar            PostgreSQL 15 database
+echo docker-images\inventory-backend.tar   Backend API
+echo docker-images\inventory-frontend.tar  Web interface
 echo.
-echo This package includes:
-echo   - Pre-built frontend static files (frontend\dist\)
-echo   - Docker images (docker-images\*.tar)
-echo   - All source code and configuration
+echo FIRST INSTALL on the offline machine:
+echo   1. scripts\windows\import-images.bat
+echo   2. scripts\windows\setup-offline.bat
 echo.
-echo To deploy on an offline machine:
-echo   1. Copy the ENTIRE project folder to the target machine
-echo   2. Install Docker Desktop on the target machine
-echo   3. Run: scripts\windows\import-images.bat
-echo   4. Run: scripts\windows\setup-offline.bat
+echo UPDATE an existing offline installation ^(keeps all data^):
+echo   scripts\windows\update-offline.bat
 echo.
-echo Docker images included:
-echo   - postgres.tar (PostgreSQL 15 Alpine^)
-echo   - inventory-backend.tar (FastAPI backend^)
-echo   - inventory-frontend.tar (React + Nginx frontend^)
-echo.
-echo Note: Node.js is NOT required on the offline machine.
-echo The frontend has been pre-built and is included.
+echo See OFFLINE_INSTALL.md for details.
 ) > docker-images\README.txt
 
 echo.
@@ -128,18 +80,13 @@ echo ==========================================
 echo   Export Complete!
 echo ==========================================
 echo.
-echo Exported files:
-echo   - Docker images in: docker-images\
-echo   - Frontend build in: frontend\dist\
+dir docker-images\*.tar
 echo.
-echo Total Docker image size:
-dir docker-images\*.tar /s 2>nul | findstr "File(s)"
+echo Copy the ENTIRE project folder (including docker-images\) to the offline
+echo machine, then follow OFFLINE_INSTALL.md.
+exit /b 0
+
+:FAILED
 echo.
-echo To deploy offline:
-echo   1. Copy the ENTIRE project folder to the offline machine
-echo   2. Install Docker Desktop (no internet needed after install)
-echo   3. Run: scripts\windows\import-images.bat
-echo   4. Run: scripts\windows\setup-offline.bat
-echo.
-echo NOTE: Node.js is NOT required on the offline machine!
-echo.
+echo ERROR: Export failed - see the messages above.
+exit /b 1

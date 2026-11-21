@@ -28,13 +28,6 @@ echo "  Export for Offline Deployment"
 echo "=========================================="
 echo ""
 
-# Check if Node.js is installed
-if ! command -v node &> /dev/null; then
-    echo "ERROR: Node.js is not installed!"
-    echo "Please install Node.js from https://nodejs.org/"
-    exit 1
-fi
-
 # Check if Docker is running
 if ! docker info &> /dev/null; then
     echo "ERROR: Docker is not running!"
@@ -45,24 +38,6 @@ fi
 # Create docker-images directory
 mkdir -p docker-images
 
-echo "[1/6] Building frontend..."
-cd frontend
-npm ci
-if [ $? -ne 0 ]; then
-    echo "ERROR: npm install failed!"
-    cd ..
-    exit 1
-fi
-npm run build
-if [ $? -ne 0 ]; then
-    echo "ERROR: Frontend build failed!"
-    cd ..
-    exit 1
-fi
-cd ..
-echo "      Frontend built successfully."
-
-echo ""
 echo "[2/6] Pulling base images..."
 docker pull postgres:15-alpine
 docker pull nginx:alpine
@@ -70,9 +45,7 @@ docker pull python:3.11-slim
 
 echo ""
 echo "[3/6] Building application images..."
-export DOCKER_BUILDKIT=0
-export COMPOSE_DOCKER_CLI_BUILD=0
-docker-compose build
+docker compose build --pull || { echo 'ERROR: build failed'; exit 1; }
 
 echo ""
 echo "[4/6] Exporting images to tar files..."
@@ -82,19 +55,11 @@ echo "      This may take several minutes..."
 docker save -o docker-images/postgres.tar postgres:15-alpine
 echo "      - postgres:15-alpine exported"
 
-docker save -o docker-images/inventory-backend.tar inventorymanager-main-backend
+docker save -o docker-images/inventory-backend.tar inventory-manager-backend:latest
 echo "      - inventory-backend exported"
 
-docker save -o docker-images/inventory-frontend.tar inventorymanager-main-frontend
+docker save -o docker-images/inventory-frontend.tar inventory-manager-frontend:latest
 echo "      - inventory-frontend exported"
-
-echo ""
-echo "[5/6] Verifying frontend dist is included..."
-if [ ! -f frontend/dist/index.html ]; then
-    echo "ERROR: Frontend dist folder not found!"
-    exit 1
-fi
-echo "      Frontend dist verified."
 
 echo ""
 echo "[6/6] Creating offline package info..."

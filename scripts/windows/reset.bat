@@ -31,10 +31,16 @@ if not "%CONFIRM%"=="RESET" (
 
 echo.
 echo Creating final backup before reset...
-call "%~dp0backup.bat" 2>nul
+call "%~dp0backup.bat"
+if errorlevel 1 (
+    echo.
+    echo ERROR: The backup failed, so the reset was CANCELLED. No data was deleted.
+    echo Make sure the application is running ^(scripts\windows\start.bat^) and try again.
+    exit /b 1
+)
 
 echo.
-echo Stopping all services...
+echo Stopping all services and deleting the database volume...
 docker-compose down -v >nul 2>&1
 
 echo.
@@ -45,8 +51,7 @@ mkdir uploads 2>nul
 mkdir logs 2>nul
 
 echo.
-echo Rebuilding and starting fresh...
-docker-compose build
+echo Starting fresh...
 docker-compose up -d
 
 echo.
@@ -60,6 +65,6 @@ echo   Reset Complete!
 echo ==========================================
 echo.
 echo The application has been reset to a fresh state.
-echo Register a new user to become the administrator.
+echo Log in with the default admin account (username: admin).
 echo.
 echo Note: A backup was saved before reset in .\backups\

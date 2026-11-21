@@ -37,9 +37,9 @@ if "%1"=="--all" goto CLEANUP_BACKUPS
 goto SKIP_BACKUPS
 
 :CLEANUP_BACKUPS
-echo Cleaning old backups (keeping last 7)...
+echo Cleaning old manual backups (keeping the newest 7; pre-migration backups are kept)...
 if exist backups (
-    powershell -Command "Get-ChildItem backups\*.zip | Sort-Object LastWriteTime -Descending | Select-Object -Skip 7 | Remove-Item -Force"
+    powershell -NoProfile -Command "Get-ChildItem backups\inventory_*.dump | Sort-Object LastWriteTime -Descending | Select-Object -Skip 7 | Remove-Item -Force"
     echo Old backups cleaned!
 )
 echo.

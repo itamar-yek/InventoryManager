@@ -20,7 +20,7 @@ echo Waiting for database to be ready (timeout: %TIMEOUT%s)...
 :LOOP
 if %ELAPSED% GEQ %TIMEOUT% goto TIMEOUT_EXIT
 
-docker-compose exec -T db pg_isready -U postgres >nul 2>&1
+docker exec inventory-db pg_isready -q >nul 2>&1
 if %ERRORLEVEL% EQU 0 goto SUCCESS
 
 echo   Still waiting... (%ELAPSED%s)

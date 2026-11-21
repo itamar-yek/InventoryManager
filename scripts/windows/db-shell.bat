@@ -13,4 +13,4 @@ echo Connecting to database...
 echo (Type \q to exit)
 echo.
 
-docker-compose exec db psql -U postgres inventory
+docker exec -it inventory-db sh -c "psql -U $POSTGRES_USER -d $POSTGRES_DB"

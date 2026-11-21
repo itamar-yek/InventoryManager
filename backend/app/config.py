@@ -26,6 +26,17 @@ class Settings(BaseSettings):
     debug: bool = False
     allowed_hosts: str = "*"
 
+    # Initial admin account - created only when the database has no users yet.
+    # Changing these later has no effect on an existing admin account.
+    admin_username: str = "admin"
+    admin_password: str = "admin"
+
+    # Where automatic pre-migration database backups are written.
+    # Before any schema change is applied to an existing database, a full
+    # pg_dump is saved here. Startup is aborted if the backup fails.
+    backup_dir: str = "./backups"
+    skip_pre_migration_backup: bool = False
+
     # File uploads - relative path from app root or absolute if specified
     upload_dir: str = "./uploads"
     max_upload_size: int = 10 * 1024 * 1024  # 10MB

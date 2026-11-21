@@ -20,9 +20,8 @@ if %ERRORLEVEL% EQU 0 (
     echo.
     echo Services started successfully!
     echo.
-    echo   Frontend: http://localhost:3000
-    echo   Backend:  http://localhost:8000
-    echo   API Docs: http://localhost:8000/docs
+    echo   Application: http://localhost
+    echo   API Docs:    http://localhost/api/docs
 ) else (
     echo.
     echo Failed to start services. Check Docker is running.

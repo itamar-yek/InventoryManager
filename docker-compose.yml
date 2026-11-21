@@ -4,11 +4,20 @@
 # Production-ready deployment configuration.
 # Designed for offline/on-prem use with no external dependencies.
 #
+# On a machine WITH internet this builds the images from source.
+# On an OFFLINE machine the images are loaded from docker-images\*.tar
+# (scripts\windows\import-images.bat) and are used as-is - nothing is built,
+# because the image names below already exist locally.
+#
 # Usage:
-#   docker-compose up -d          # Start all services
-#   docker-compose logs -f        # View logs
-#   docker-compose down           # Stop all services
-#   docker-compose down -v        # Stop and remove volumes (WARNING: data loss)
+#   docker compose up -d          # Start all services
+#   docker compose logs -f        # View logs
+#   docker compose down           # Stop all services (data is kept)
+#
+#   NEVER run "docker compose down -v" - the -v deletes the database volume.
+
+# Fixed project name, so commands work no matter what the folder is called.
+name: inventory-manager
 
 services:
   # ---------------------------------------------------------------------------
@@ -25,7 +34,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-inventory}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -36,6 +45,7 @@ services:
   # Backend API (FastAPI)
   # ---------------------------------------------------------------------------
   backend:
+    image: inventory-manager-backend:latest
     build:
       context: ./backend
       dockerfile: ../docker/Dockerfile.backend
@@ -44,11 +54,16 @@ services:
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-inventory}
       SECRET_KEY: ${SECRET_KEY:-change-this-in-production}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin}
       DEBUG: ${DEBUG:-false}
       ALLOWED_HOSTS: ${ALLOWED_HOSTS:-*}
+      BACKUP_DIR: /app/backups
     volumes:
       - uploads_data:/app/uploads
       - logs_data:/app/logs
+      # Automatic backups taken before every database schema upgrade
+      - ./backups:/app/backups
     depends_on:
       db:
         condition: service_healthy
@@ -57,7 +72,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 10s
+      start_period: 60s
     networks:
       - inventory-network
 
@@ -65,6 +80,7 @@ services:
   # Frontend (React + Nginx)
   # ---------------------------------------------------------------------------
   frontend:
+    image: inventory-manager-frontend:latest
     build:
       context: .
       dockerfile: docker/Dockerfile.frontend
@@ -76,7 +92,7 @@ services:
       backend:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/health"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1/health"]
       interval: 30s
       timeout: 10s
       retries: 3

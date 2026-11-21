@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.compartment import Compartment
+from app.models.item import Item, ItemStatus
 from app.models.storage_unit import StorageUnit
 from app.models.user import User, UserRole
 from app.schemas.compartment import CompartmentCreate, CompartmentUpdate, CompartmentResponse
@@ -104,6 +105,18 @@ async def delete_compartment(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Compartment not found"
+        )
+
+    # Refuse to delete a compartment that still holds active items.
+    # Previously this crashed with a database constraint error (HTTP 500).
+    item_count = db.query(Item).filter(
+        Item.compartment_id == compartment_id,
+        Item.status == ItemStatus.ACTIVE
+    ).count()
+    if item_count > 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot delete compartment with {item_count} item(s). Move or delete items first."
         )
 
     db.delete(compartment)

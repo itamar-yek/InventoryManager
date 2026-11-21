@@ -23,7 +23,7 @@ echo Health Checks:
 echo --------------
 
 REM Check backend health
-curl -s http://localhost:8000/health >nul 2>&1
+curl -s -f http://localhost/api/health >nul 2>&1
 if %ERRORLEVEL% EQU 0 (
     echo   Backend:  HEALTHY
 ) else (
@@ -31,7 +31,7 @@ if %ERRORLEVEL% EQU 0 (
 )
 
 REM Check frontend
-curl -s http://localhost:3000 >nul 2>&1
+curl -s -f http://localhost/health >nul 2>&1
 if %ERRORLEVEL% EQU 0 (
     echo   Frontend: HEALTHY
 ) else (
@@ -39,7 +39,7 @@ if %ERRORLEVEL% EQU 0 (
 )
 
 REM Check database
-docker-compose exec -T db pg_isready -U postgres >nul 2>&1
+docker exec inventory-db pg_isready -q >nul 2>&1
 if %ERRORLEVEL% EQU 0 (
     echo   Database: HEALTHY
 ) else (

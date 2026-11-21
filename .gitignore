@@ -60,9 +60,13 @@ yarn-error.log*
 .pnpm-debug.log*
 
 # Build output
-# NOTE: frontend/dist/ is NOT ignored - it's needed for offline deployment
-# frontend/dist/
+# The frontend is built inside Docker (docker/Dockerfile.frontend), so the
+# local dist folder is not needed for offline deployment.
+frontend/dist/
 frontend/build/
+
+# Offline deployment package (large image .tar files - copy them on a USB drive)
+docker-images/
 
 # -----------------------------------------------------------------------------
 # IDE and editors

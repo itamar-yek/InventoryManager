@@ -231,6 +231,96 @@ async def create_item(
     return item
 
 
+# =============================================================================
+# Batch Operations
+# NOTE: batch routes must be registered BEFORE the /{item_id} routes, otherwise
+# POST /items/batch/move is captured by /{item_id}/move (with item_id='batch').
+# =============================================================================
+
+@router.post("/batch/delete", response_model=BatchOperationResult)
+async def batch_delete_items(
+    data: BatchItemDelete,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(require_role(UserRole.EDITOR))]
+):
+    """Batch soft-delete multiple items."""
+    # Fetch all items
+    items = db.query(Item).filter(
+        Item.id.in_(data.item_ids),
+        Item.status == ItemStatus.ACTIVE
+    ).all()
+
+    if not items:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No active items found with the provided IDs"
+        )
+
+    # Soft delete all items
+    now = datetime.utcnow()
+    for item in items:
+        item.status = ItemStatus.DELETED
+        item.deleted_at = now
+
+    db.commit()
+
+    return BatchOperationResult(success_count=len(items))
+
+
+@router.post("/batch/move", response_model=BatchOperationResult)
+async def batch_move_items(
+    data: BatchItemMove,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(require_role(UserRole.EDITOR))]
+):
+    """Batch move multiple items to a new storage unit."""
+    # Verify destination exists
+    destination = db.query(StorageUnit).filter(StorageUnit.id == data.to_storage_unit_id).first()
+    if not destination:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Destination storage unit not found"
+        )
+
+    # Fetch all items
+    items = db.query(Item).filter(
+        Item.id.in_(data.item_ids),
+        Item.status == ItemStatus.ACTIVE
+    ).all()
+
+    if not items:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No active items found with the provided IDs"
+        )
+
+    # Create movement records and update items
+    for item in items:
+        # Record movement
+        movement = ItemMovement(
+            item_id=item.id,
+            user_id=current_user.id,
+            from_storage_unit_id=item.storage_unit_id,
+            from_compartment_id=item.compartment_id,
+            to_storage_unit_id=data.to_storage_unit_id,
+            to_compartment_id=None,
+            reason=data.reason or "Batch move"
+        )
+        db.add(movement)
+
+        # Update item location
+        item.storage_unit_id = data.to_storage_unit_id
+        item.compartment_id = None
+
+    db.commit()
+
+    return BatchOperationResult(success_count=len(items), moved_count=len(items))
+
+
+# =============================================================================
+# Single item operations
+# =============================================================================
+
 @router.get("/{item_id}", response_model=ItemResponse)
 async def get_item(
     item_id: UUID,
@@ -352,87 +442,3 @@ async def get_item_history(
     ).order_by(ItemMovement.created_at.desc()).all()
 
     return [m.to_dict() for m in movements]
-
-
-# =============================================================================
-# Batch Operations
-# =============================================================================
-
-@router.post("/batch/delete", response_model=BatchOperationResult)
-async def batch_delete_items(
-    data: BatchItemDelete,
-    db: Annotated[Session, Depends(get_db)],
-    current_user: Annotated[User, Depends(require_role(UserRole.EDITOR))]
-):
-    """Batch soft-delete multiple items."""
-    # Fetch all items
-    items = db.query(Item).filter(
-        Item.id.in_(data.item_ids),
-        Item.status == ItemStatus.ACTIVE
-    ).all()
-
-    if not items:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="No active items found with the provided IDs"
-        )
-
-    # Soft delete all items
-    now = datetime.utcnow()
-    for item in items:
-        item.status = ItemStatus.DELETED
-        item.deleted_at = now
-
-    db.commit()
-
-    return BatchOperationResult(success_count=len(items))
-
-
-@router.post("/batch/move", response_model=BatchOperationResult)
-async def batch_move_items(
-    data: BatchItemMove,
-    db: Annotated[Session, Depends(get_db)],
-    current_user: Annotated[User, Depends(require_role(UserRole.EDITOR))]
-):
-    """Batch move multiple items to a new storage unit."""
-    # Verify destination exists
-    destination = db.query(StorageUnit).filter(StorageUnit.id == data.to_storage_unit_id).first()
-    if not destination:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Destination storage unit not found"
-        )
-
-    # Fetch all items
-    items = db.query(Item).filter(
-        Item.id.in_(data.item_ids),
-        Item.status == ItemStatus.ACTIVE
-    ).all()
-
-    if not items:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="No active items found with the provided IDs"
-        )
-
-    # Create movement records and update items
-    for item in items:
-        # Record movement
-        movement = ItemMovement(
-            item_id=item.id,
-            user_id=current_user.id,
-            from_storage_unit_id=item.storage_unit_id,
-            from_compartment_id=item.compartment_id,
-            to_storage_unit_id=data.to_storage_unit_id,
-            to_compartment_id=None,
-            reason=data.reason or "Batch move"
-        )
-        db.add(movement)
-
-        # Update item location
-        item.storage_unit_id = data.to_storage_unit_id
-        item.compartment_id = None
-
-    db.commit()
-
-    return BatchOperationResult(success_count=len(items), moved_count=len(items))

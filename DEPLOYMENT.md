@@ -1,5 +1,9 @@
 # Inventory Manager - Deployment Guide
 
+> **Installing on an offline Windows computer?** Follow
+> [OFFLINE_INSTALL.md](OFFLINE_INSTALL.md). **Changing the database
+> structure?** Read [DATABASE_CHANGES.md](DATABASE_CHANGES.md) first.
+
 This guide covers first-time deployment and ongoing maintenance of the Inventory Manager application on a private network.
 
 ## Table of Contents
@@ -112,11 +116,14 @@ This will:
 
 ### Step 5: Create Admin User
 
-The first user to register will automatically become an administrator. Open your browser and:
+On first start an administrator account is created automatically:
+username `admin`, password from `ADMIN_PASSWORD` in `.env` (default `admin`).
+Set `ADMIN_PASSWORD` **before** the first start; it is ignored once users exist.
 
 1. Navigate to `http://<server-ip>` (or configured port)
-2. Click "Register"
-3. Create your admin account
+2. Log in as `admin`
+3. Users who register themselves get the Viewer role; promote them in the
+   Admin dashboard.
 
 ---
 

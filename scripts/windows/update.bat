@@ -16,6 +16,10 @@ echo.
 
 echo Creating backup before update...
 call "%~dp0backup.bat"
+if errorlevel 1 (
+    echo ERROR: Backup failed - update aborted, nothing was changed.
+    exit /b 1
+)
 
 echo.
 echo Pulling latest changes...
@@ -33,6 +37,9 @@ docker-compose build
 
 echo.
 echo Restarting services...
+REM Replace containers from older versions (data is kept in Docker volumes).
+docker stop -t 60 inventory-frontend inventory-backend inventory-db >nul 2>&1
+docker rm inventory-frontend inventory-backend inventory-db >nul 2>&1
 docker-compose up -d
 
 echo.
