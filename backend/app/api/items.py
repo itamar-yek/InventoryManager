@@ -452,4 +452,36 @@ async def get_item_history(
         ItemMovement.item_id == item_id
     ).order_by(ItemMovement.created_at.desc()).all()
 
-    return [m.to_dict() for m in movements]
+    # Human-readable names for the history screen (the raw ids are kept too).
+    # Units/compartments may have been deleted since; that is shown as such.
+    def describe_location(unit_id, compartment_id) -> Optional[str]:
+        parts = []
+        unit = None
+        if compartment_id:
+            comp = db.query(Compartment).filter(Compartment.id == compartment_id).first()
+            if comp is None:
+                return "(deleted compartment)"
+            unit = comp.storage_unit
+            parts.append(comp.name)
+        elif unit_id:
+            unit = db.query(StorageUnit).filter(StorageUnit.id == unit_id).first()
+            if unit is None:
+                return "(deleted storage unit)"
+        else:
+            return None
+        parts.insert(0, unit.label)
+        if unit.room:
+            room_name = unit.room.name
+            if unit.room.building:
+                room_name = f"{unit.room.building} - {room_name}"
+            parts.insert(0, room_name)
+        return " > ".join(parts)
+
+    result = []
+    for m in movements:
+        entry = m.to_dict()
+        entry["username"] = m.user.username if m.user else None
+        entry["from_location"] = describe_location(m.from_storage_unit_id, m.from_compartment_id)
+        entry["to_location"] = describe_location(m.to_storage_unit_id, m.to_compartment_id)
+        result.append(entry)
+    return result

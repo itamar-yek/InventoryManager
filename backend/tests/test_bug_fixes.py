@@ -131,6 +131,29 @@ def test_edit_count_increments_only_for_successful_inventory_edits(client, auth_
     assert stats["top_editors"][0] == {"username": "admin", "edit_count": 2}
 
 
+def test_item_history_has_readable_names(client, auth_headers):
+    room, unit_a, unit_b, comp = _setup(client, auth_headers)
+    item = client.post("/api/items/", headers=auth_headers, json={
+        "name": "Tracked", "storage_unit_id": unit_a["id"]}).json()
+    client.post(f"/api/items/{item['id']}/move", headers=auth_headers,
+                json={"to_compartment_id": comp["id"], "reason": "into drawer"})
+    client.post(f"/api/items/{item['id']}/move", headers=auth_headers,
+                json={"to_storage_unit_id": unit_b["id"]})
+
+    history = client.get(f"/api/items/{item['id']}/history", headers=auth_headers).json()
+    assert len(history) == 2
+    # Both moves happen within the same second here (SQLite stores whole
+    # seconds), so identify them by content rather than by order.
+    oldest = next(h for h in history if h["reason"] == "into drawer")
+    newest = next(h for h in history if h is not oldest)
+    assert oldest["from_location"] == "R > A"
+    assert oldest["to_location"] == "R > A > Drawer"
+    assert oldest["reason"] == "into drawer"
+    assert oldest["username"] == "admin"
+    assert newest["from_location"] == "R > A > Drawer"
+    assert newest["to_location"] == "R > B"
+
+
 def test_delete_empty_compartment_succeeds(client, auth_headers):
     _, _, _, comp = _setup(client, auth_headers)
     assert client.delete(f"/api/compartments/{comp['id']}", headers=auth_headers).status_code == 204

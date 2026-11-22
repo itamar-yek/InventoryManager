@@ -340,6 +340,11 @@ export interface ItemMovement {
   to_compartment_id: string | null;
   reason: string | null;
   created_at: string;
+  /** Who moved it (null if the user was removed) */
+  username?: string | null;
+  /** Readable "Room > Unit > Compartment" paths */
+  from_location?: string | null;
+  to_location?: string | null;
 }
 
 // =============================================================================

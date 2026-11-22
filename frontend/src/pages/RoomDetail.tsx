@@ -7,10 +7,13 @@ import { useEffect, useState, useCallback } from 'react';
 import { useParams, Link, useSearchParams } from 'react-router-dom';
 import { useInventoryStore } from '../stores/inventoryStore';
 import { useAuthStore } from '../stores/authStore';
-import { roomsApi } from '../services/api';
+import { roomsApi, compartmentsApi } from '../services/api';
 import RoomCanvas, { findFreeSpot } from '../components/RoomCanvas';
 import LoginPrompt from '../components/LoginPrompt';
-import type { StorageUnitCreate, StorageUnitType, StorageUnitUpdate, BlockCreate, ItemCreate, ItemUpdate, Item, DoorWall } from '../types';
+import EditRoomModal from '../components/EditRoomModal';
+import ItemHistoryModal from '../components/ItemHistoryModal';
+import CompartmentsPanel from '../components/CompartmentsPanel';
+import type { StorageUnitCreate, StorageUnitType, StorageUnitUpdate, BlockCreate, ItemCreate, ItemUpdate, Item, DoorWall, Compartment } from '../types';
 
 /**
  * Room detail with canvas and unit management
@@ -42,7 +45,7 @@ function RoomDetail() {
     isLoading,
     error,
   } = useInventoryStore();
-  const { canEdit, isAuthenticated, user } = useAuthStore();
+  const { canEdit, isAdmin, isAuthenticated, user } = useAuthStore();
   const [showLoginPrompt, setShowLoginPrompt] = useState(false);
   const [accessDenied, setAccessDenied] = useState(false);
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
@@ -114,6 +117,14 @@ function RoomDetail() {
   const [moveTargetUnit, setMoveTargetUnit] = useState<string>('');
   const [targetRoomUnits, setTargetRoomUnits] = useState<{ id: string; label: string }[]>([]);
 
+  // Edit room / item history / compartments
+  const [showEditRoom, setShowEditRoom] = useState(false);
+  const [historyItem, setHistoryItem] = useState<Item | null>(null);
+  const [unitCompartments, setUnitCompartments] = useState<Compartment[]>([]);
+  const [newItemCompartment, setNewItemCompartment] = useState('');
+  const [moveTargetCompartment, setMoveTargetCompartment] = useState('');
+  const [targetUnitCompartments, setTargetUnitCompartments] = useState<Compartment[]>([]);
+
   // Multi-select state
   const [selectMode, setSelectMode] = useState(false);
   const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(new Set());
@@ -151,6 +162,27 @@ function RoomDetail() {
     fetchRooms();
   }, []);
 
+  // Load the compartments of a storage unit
+  const loadCompartments = useCallback(async (unitId: string | null) => {
+    if (!unitId) {
+      setUnitCompartments([]);
+      return;
+    }
+    try {
+      setUnitCompartments(await compartmentsApi.list(unitId));
+    } catch {
+      setUnitCompartments([]);
+    }
+  }, []);
+
+  // Reload compartments and items of the selected unit (after compartment changes)
+  const reloadUnitContents = () => {
+    if (selectedUnitId) {
+      loadCompartments(selectedUnitId);
+      fetchItems(selectedUnitId);
+    }
+  };
+
   // Fetch items when unit is selected, clear selection
   useEffect(() => {
     if (selectedUnitId) {
@@ -158,7 +190,23 @@ function RoomDetail() {
       setSelectedItemIds(new Set()); // Clear selection when switching units
       setSelectMode(false); // Exit select mode when switching units
     }
+    loadCompartments(selectedUnitId);
   }, [selectedUnitId]);
+
+  // Compartments of the unit chosen as move target
+  useEffect(() => {
+    setMoveTargetCompartment('');
+    if (!moveTargetUnit) {
+      setTargetUnitCompartments([]);
+      return;
+    }
+    compartmentsApi.list(moveTargetUnit)
+      .then(setTargetUnitCompartments)
+      .catch(() => setTargetUnitCompartments([]));
+  }, [moveTargetUnit]);
+
+  const compartmentName = (compartmentId: string | null) =>
+    compartmentId ? unitCompartments.find(c => c.id === compartmentId)?.name : undefined;
 
   // Handle keyboard events for delete
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
@@ -457,15 +505,21 @@ function RoomDetail() {
       .map(p => p.trim())
       .filter(p => p.length > 0);
 
+    // Either directly in the unit, or in one of its compartments
+    const location = newItemCompartment
+      ? { compartment_id: newItemCompartment }
+      : { storage_unit_id: selectedUnitId };
+
     await createItem({
       ...newItem,
       projects,
-      storage_unit_id: selectedUnitId,
+      ...location,
     } as ItemCreate);
 
     setShowAddItem(false);
     setNewItem({ name: '', unit_catalog_number: '', catalog_number: '', serial_number: '', owned_by: '', description: '', quantity: 1, projects: [] });
     setNewItemProjectsInput('');
+    setNewItemCompartment('');
   };
 
   /**
@@ -573,18 +627,28 @@ function RoomDetail() {
    */
   const handleMoveItem = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!itemToMove || !moveTargetUnit) return;
+    if (!itemToMove || !moveTargetUnit || isSameLocation) return;
 
-    await moveItem(itemToMove.id, {
-      to_storage_unit_id: moveTargetUnit,
-      reason: 'Moved via UI'
-    });
+    const moved = await moveItem(itemToMove.id, moveTargetCompartment
+      ? { to_compartment_id: moveTargetCompartment, reason: 'Moved via UI' }
+      : { to_storage_unit_id: moveTargetUnit, reason: 'Moved via UI' });
 
     setShowMoveItem(false);
     setItemToMove(null);
     setMoveTargetRoom('');
     setMoveTargetUnit('');
+    setMoveTargetCompartment('');
+    // The item may still belong to this unit (moved into/out of one of its
+    // compartments), so reload the list instead of just removing it.
+    if (moved && selectedUnitId) fetchItems(selectedUnitId);
   };
+
+  // Moving to exactly where the item already is makes no sense
+  const isSameLocation = !!itemToMove && !!moveTargetUnit && (
+    moveTargetCompartment
+      ? itemToMove.compartment_id === moveTargetCompartment
+      : itemToMove.storage_unit_id === moveTargetUnit
+  );
 
   // Get selected unit details
   const selectedUnit = currentRoom?.storage_units.find(u => u.id === selectedUnitId);
@@ -646,6 +710,11 @@ function RoomDetail() {
         </div>
 
         <div className="flex gap-2">
+          {canEdit() && (
+            <button onClick={() => setShowEditRoom(true)} className="btn-secondary">
+              Edit Room
+            </button>
+          )}
           <button
             onClick={async () => {
               try {
@@ -865,7 +934,9 @@ function RoomDetail() {
                           <div className="flex-1">
                             <p className="font-medium">{item.name}</p>
                           {item.compartment_id && (
-                            <p className="text-xs text-amber-700">(in a drawer/compartment of this unit)</p>
+                            <p className="text-xs text-amber-700">
+                              In: {compartmentName(item.compartment_id) || 'a compartment of this unit'}
+                            </p>
                           )}
                           {item.unit_catalog_number && (
                             <p className="text-gray-500 text-xs">
@@ -931,6 +1002,12 @@ function RoomDetail() {
                               Move
                             </button>
                             <button
+                              onClick={() => setHistoryItem(item)}
+                              className="text-gray-500 hover:text-gray-700 text-xs"
+                            >
+                              History
+                            </button>
+                            <button
                               onClick={() => handleDeleteItem(item.id, item.name)}
                               className="text-red-500 hover:text-red-700 text-xs"
                             >
@@ -944,6 +1021,15 @@ function RoomDetail() {
                   ))}
                 </ul>
               )}
+
+              <CompartmentsPanel
+                unitId={selectedUnit.id}
+                compartments={unitCompartments}
+                items={items}
+                canEdit={canEdit()}
+                canDelete={isAdmin()}
+                onChanged={reloadUnitContents}
+              />
             </div>
           ) : (
             <div className="card">
@@ -1274,6 +1360,23 @@ function RoomDetail() {
                 </div>
               </div>
 
+              {unitCompartments.length > 0 && (
+                <div>
+                  <label htmlFor="itemLocation" className="label">Location in {selectedUnit.label}</label>
+                  <select
+                    id="itemLocation"
+                    value={newItemCompartment}
+                    onChange={(e) => setNewItemCompartment(e.target.value)}
+                    className="input"
+                  >
+                    <option value="">Directly in the unit</option>
+                    {unitCompartments.map((c) => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
               <div>
                 <label htmlFor="serialNumber" className="label">Serial Number</label>
                 <input
@@ -1394,15 +1497,36 @@ function RoomDetail() {
                         ? 'No storage units in this room'
                         : 'Select a storage unit...'}
                   </option>
-                  {targetRoomUnits
-                    .filter(u => u.id !== selectedUnitId) // Exclude current unit
-                    .map((unit) => (
-                      <option key={unit.id} value={unit.id}>
-                        {unit.label}
-                      </option>
-                    ))}
+                  {/* The current unit is included so an item can be moved
+                      into / out of one of its compartments */}
+                  {targetRoomUnits.map((unit) => (
+                    <option key={unit.id} value={unit.id}>
+                      {unit.label}{unit.id === selectedUnitId ? ' (current unit)' : ''}
+                    </option>
+                  ))}
                 </select>
               </div>
+
+              {moveTargetUnit && targetUnitCompartments.length > 0 && (
+                <div>
+                  <label htmlFor="targetCompartment" className="label">Compartment</label>
+                  <select
+                    id="targetCompartment"
+                    value={moveTargetCompartment}
+                    onChange={(e) => setMoveTargetCompartment(e.target.value)}
+                    className="input"
+                  >
+                    <option value="">Directly in the unit</option>
+                    {targetUnitCompartments.map((c) => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {isSameLocation && (
+                <p className="text-sm text-amber-700">The item is already there.</p>
+              )}
 
               <div className="flex justify-end gap-2">
                 <button
@@ -1418,7 +1542,7 @@ function RoomDetail() {
                 <button
                   type="submit"
                   className="btn-primary"
-                  disabled={!moveTargetUnit}
+                  disabled={!moveTargetUnit || isSameLocation}
                 >
                   Move Item
                 </button>
@@ -1726,6 +1850,24 @@ function RoomDetail() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Edit Room Modal */}
+      {showEditRoom && (
+        <EditRoomModal
+          room={currentRoom}
+          onClose={() => setShowEditRoom(false)}
+          onSaved={() => {
+            setShowEditRoom(false);
+            fetchRoom(currentRoom.id);
+            fetchRooms();
+          }}
+        />
+      )}
+
+      {/* Item Movement History Modal */}
+      {historyItem && (
+        <ItemHistoryModal item={historyItem} onClose={() => setHistoryItem(null)} />
       )}
 
       {/* Login Prompt Modal */}

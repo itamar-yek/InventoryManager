@@ -9,6 +9,7 @@ import { Link } from 'react-router-dom';
 import { useInventoryStore } from '../stores/inventoryStore';
 import { useAuthStore } from '../stores/authStore';
 import { roomsApi } from '../services/api';
+import ItemHistoryModal from '../components/ItemHistoryModal';
 
 /**
  * Search page with results
@@ -25,6 +26,7 @@ function Search() {
   const [batchMoveTargetRoom, setBatchMoveTargetRoom] = useState<string>('');
   const [batchMoveTargetUnit, setBatchMoveTargetUnit] = useState<string>('');
   const [batchTargetRoomUnits, setBatchTargetRoomUnits] = useState<{ id: string; label: string }[]>([]);
+  const [historyItem, setHistoryItem] = useState<{ id: string; name: string; created_at: string } | null>(null);
 
   // Fetch rooms for move modal
   useEffect(() => {
@@ -270,6 +272,13 @@ function Search() {
                             {item.description}
                           </p>
                         )}
+                        <button
+                          type="button"
+                          onClick={() => setHistoryItem(item)}
+                          className="text-xs text-primary-600 hover:underline"
+                        >
+                          History
+                        </button>
                       </td>
                       <td className="py-3 text-sm">
                         {item.unit_catalog_number && (
@@ -445,6 +454,11 @@ function Search() {
             </form>
           </div>
         </div>
+      )}
+
+      {/* Item Movement History */}
+      {historyItem && (
+        <ItemHistoryModal item={historyItem} onClose={() => setHistoryItem(null)} />
       )}
     </div>
   );
